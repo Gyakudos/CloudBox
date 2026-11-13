@@ -1,0 +1,15 @@
+# Normalise line endings on commit; Windows scripts keep CRLF.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never text-normalise.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.mp4 binary
+*.mp3 binary
+*.zip binary
+*.exe binary

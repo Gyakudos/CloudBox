@@ -1,0 +1,39 @@
+# --- CloudBox runtime data (never committed) ---
+.cloudbox/
+*.cloudbox-partial
+
+# --- Go ---
+/agent/bin/
+/agent/dist/
+*.exe
+*.exe~
+*.test
+*.out
+coverage.*
+vendor/
+
+# --- Flutter / Dart ---
+/app/.dart_tool/
+/app/.packages
+/app/build/
+/app/.flutter-plugins
+/app/.flutter-plugins-dependencies
+/app/android/.gradle/
+/app/android/local.properties
+/app/android/key.properties
+/app/android/app/debug/
+/app/android/app/profile/
+/app/android/app/release/
+/app/ios/Pods/
+/app/ios/.symlinks/
+/app/macos/Pods/
+/app/windows/flutter/ephemeral/
+/app/linux/flutter/ephemeral/
+*.iml
+
+# --- Editors / OS ---
+.idea/
+.vscode/
+Thumbs.db
+desktop.ini
+.DS_Store
