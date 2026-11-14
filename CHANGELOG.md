@@ -35,6 +35,18 @@ bytes re-sent when the same content already exists.
   terminal for headless machines.
 - `cloudbox hash <file>` — prints the BLAKE3-256 content ID the transfer protocol uses.
 - `GET /v1/system/info` now lists configured sync folders.
+- **Android app** (`app/`) — the first Flutter client. Pairs by pasting the agent's pairing code
+  over pinned TLS: the certificate's SPKI digest must match the code, and the Dart pin is
+  cross-checked against the Go agent's value by a committed test vector. After pairing it lists
+  the PC's drives with capacity, filesystem and removable/network flags. Pin extraction walks
+  the certificate's ASN.1 directly, because Dart's `X509Certificate` exposes only the full DER.
+- **Windows installer** (`installer/`, `eng/build-installer.ps1`) — an Inno Setup package for the
+  agent alone (the Flutter toolchain is build-time only, never a PC runtime dependency).
+  Installs per-user without elevation, adds a Start Menu entry that shows a pairing code, offers
+  an optional start-at-sign-in entry that launches the agent hidden, and adds a Windows Firewall
+  rule for TCP 8443 when run as administrator.
+- **Release automation** — CI builds `cloudbox-<version>.apk` and
+  `cloudbox-setup-<version>.exe` and attaches both to the GitHub Release on a `v*` tag push.
 
 ### Changed
 

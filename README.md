@@ -14,6 +14,18 @@ PC. No subscription, no third-party storage, nothing leaves home.
 
 ---
 
+## Downloads
+
+Tagged releases carry ready-to-install artifacts, built by CI whenever a `v*` tag is pushed:
+
+| Asset | What it is |
+|-------|------------|
+| `cloudbox-setup-<version>.exe` | Windows installer for the PC agent — per-user, optional start-at-sign-in |
+| `cloudbox-<version>.apk` | Android app (universal APK; debug-signed until release signing is configured) |
+
+See [Releases](https://github.com/Gyakudos/CloudBox/releases). To build them yourself, see
+[Getting started](#getting-started).
+
 ## What it does
 
 Every folder CloudBox manages is in exactly one of three modes:
@@ -52,6 +64,11 @@ concurrent. That is why the most common use case ships before the sync engine ex
 CloudBox/
 ├─ VERSION                     single source of truth for the release version
 ├─ eng/                        build & version tooling
+│  ├─ version.ps1              regenerate generated version constants (-Check in CI)
+│  ├─ build-apk.ps1            flutter build apk → dist/cloudbox-<version>.apk
+│  ├─ build-installer.ps1      cross-compile agent + Inno Setup → dist/cloudbox-setup-<version>.exe
+│  └─ smoke.ps1                end-to-end agent smoke test
+├─ installer/                  Inno Setup script + autostart launcher
 ├─ docs/
 │  ├─ sync-protocol.md
 │  └─ decisions/
@@ -65,8 +82,11 @@ CloudBox/
 │     ├─ mdns/                 _cloudbox._tcp advertisement
 │     ├─ pairing/ · identity/ · devices/ · discovery/ · volume/
 │     └─ version/              generated constants
-└─ app/                        Flutter Android app
-   └─ lib/core/gen/            generated version constants (do not edit)
+├─ app/                        Flutter Android app
+│  ├─ lib/core/                pinned HTTPS client, pairing payload, models
+│  ├─ lib/ui/                  pairing + drive-picker screens
+│  └─ lib/core/gen/            generated version constants (do not edit)
+└─ dist/                       release artifacts (git-ignored, built by CI)
 ```
 
 ## Prerequisites
@@ -103,13 +123,33 @@ out-of-order appends, uploads a file, commits it into the sync folder, and check
 pwsh eng/smoke.ps1
 ```
 
-**Android app** — not scaffolded yet. Generate the platform shells first, then re-apply the
-version overrides recorded in `app/README.md`:
+**Android app** — Flutter. Pairs over pinned TLS, then lists the PC's drives. Paste the pairing
+code the agent prints (there is no camera scanner yet).
 
 ```sh
 cd app
-flutter create --org dev.cloudbox --project-name cloudbox --platforms android .
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --release        # → build/app/outputs/flutter-apk/app-release.apk
 ```
+
+Or, from the repository root, `pwsh eng/build-apk.ps1` stages the APK as
+`dist/cloudbox-<version>.apk`. The Android `versionName`/`versionCode` are read straight from
+`VERSION` in `android/app/build.gradle.kts`; see `app/README.md` for the details.
+
+**Windows installer** — installs the agent per-user (no administrator required), adds a Start
+Menu entry, and can start the agent at sign-in:
+
+```powershell
+pwsh eng/build-installer.ps1       # → dist/cloudbox-setup-<version>.exe
+```
+
+The installer ships **only the agent** — the Flutter toolchain is a build-time dependency for
+the Android app, not something a PC needs at runtime. It writes the agent to
+`%LOCALAPPDATA%\Programs\CloudBox`, registers an optional autostart entry under `HKCU`, and
+offers a firewall rule when run as an administrator. Running **CloudBox** from the Start Menu
+opens a console showing a fresh pairing code; the autostart entry launches the agent hidden.
 
 ## Versioning
 

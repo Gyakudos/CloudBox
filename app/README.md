@@ -27,8 +27,9 @@ always matches the file tree:
 ```kotlin
 android {
     defaultConfig {
-        // Single source of truth: ../VERSION (0.01.13.11.26)
-        val cloudboxVersion = rootProject.file("../VERSION").readText().trim()
+        // Single source of truth: ../../VERSION (0.01.13.11.26). The Gradle root project is
+        // android/, so the repository root is two levels up.
+        val cloudboxVersion = rootProject.file("../../VERSION").readText().trim()
         versionName = cloudboxVersion
         versionCode = (cloudboxVersion.split(".").let { p ->
             (p[4].toInt() * 10000) + (p[3].toInt() * 100) + (p[2].toInt())   // YYMMDD

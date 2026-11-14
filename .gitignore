@@ -2,6 +2,9 @@
 .cloudbox/
 *.cloudbox-partial
 
+# --- Release artifacts (built by CI, attached to GitHub Releases) ---
+/dist/
+
 # --- Go ---
 /agent/bin/
 /agent/dist/
