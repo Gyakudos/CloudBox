@@ -69,7 +69,10 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          # Pinned to the toolchain the app is developed and tested against. A moving
+          # `stable` channel makes `flutter analyze` results non-reproducible: newer SDKs add
+          # diagnostics that fail CI without any code change.
+          flutter-version: '3.47.8'
           cache: true
 
       - name: Verify generated version artifacts
