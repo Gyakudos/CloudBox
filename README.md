@@ -6,8 +6,8 @@ PC. No subscription, no third-party storage, nothing leaves home.
 
 | | |
 |---|---|
-| **Version** | `0.00.13.11.26` — scheme in [ADR 0001](docs/decisions/0001-versioning.md) |
-| **Status** | Pre-alpha · M0 agent core working (pairing, TLS pinning, drive enumeration) |
+| **Version** | `0.01.13.11.26` - scheme in [ADR 0001](docs/decisions/0001-versioning.md) |
+| **Status** | Pre-alpha · M1 transfer core working (resumable upload → verified → atomic finalize) |
 | **Android** | Flutter (Dart) + Kotlin platform channels |
 | **PC agent** | Go, single static binary (`CGO_ENABLED=0`) |
 | **Reachability** | LAN, plus optional tailnet via embedded `tsnet` |
@@ -58,6 +58,13 @@ CloudBox/
 ├─ agent/                      Go PC agent
 │  ├─ cmd/cloudbox/
 │  └─ internal/
+│     ├─ api/                  HTTPS surface (pair, volumes, uploads)
+│     ├─ blob/                 content-addressed resumable staging cache
+│     ├─ folder/               atomic finalize into a sync root
+│     ├─ safepath/             untrusted path sanitisation (NFC, Windows rules)
+│     ├─ mdns/                 _cloudbox._tcp advertisement
+│     ├─ pairing/ · identity/ · devices/ · discovery/ · volume/
+│     └─ version/              generated constants
 └─ app/                        Flutter Android app
    └─ lib/core/gen/            generated version constants (do not edit)
 ```
@@ -73,20 +80,24 @@ CloudBox/
 
 ## Getting started
 
-**PC agent** — M0 works: it serves a pinned-TLS API, pairs a device, and lists real drives.
+**PC agent** — M0 + M1 work: it serves a pinned-TLS API, pairs a device by QR, lists real
+drives, and accepts resumable, verified uploads that land as real files in a chosen folder.
 
 ```sh
 cd agent
 go run ./cmd/cloudbox version
-go run ./cmd/cloudbox serve            # prints the pairing payload and its cert pin
+go run ./cmd/cloudbox serve            # prints a scannable QR code for pairing
+go run ./cmd/cloudbox hash <file>      # BLAKE3-256, the transfer protocol's content ID
 go build -o bin/cloudbox.exe ./cmd/cloudbox
 ```
 
-`cloudbox serve` writes the pairing payload to `<data dir>/pairing.json` (default data dir is
-`%APPDATA%\CloudBox`). Flags: `--addr` (default `:8443`), `--dir`, `--name`, `--pair-ttl`.
+`cloudbox serve` writes the pairing payload to `<data dir>/pairing.json` and a scannable image
+to `<data dir>/pairing.png`, and advertises `_cloudbox._tcp` over mDNS (default data dir is
+`%APPDATA%\CloudBox`). Flags: `--addr`, `--dir`, `--name`, `--pair-ttl`, `--sync-root`
+(the folder that receives backups), `--sync-name`, `--blob-cache-mb`, `--mdns`.
 
-Run the end-to-end smoke test (boots the real server, pairs, lists volumes, checks replay
-rejection):
+Run the end-to-end smoke test (boots the real server, pairs, lists volumes, rejects replay and
+out-of-order appends, uploads a file, commits it into the sync folder, and checks dedupe):
 
 ```powershell
 pwsh eng/smoke.ps1
@@ -102,7 +113,7 @@ flutter create --org dev.cloudbox --project-name cloudbox --platforms android .
 
 ## Versioning
 
-`VERSION` holds `MAJOR.MINOR.DD.MM.YY`, e.g. `0.00.13.11.26` = minor 00, released
+`VERSION` holds `MAJOR.MINOR.DD.MM.YY`, e.g. `0.01.13.11.26` = minor 01, released
 **2026-11-13**. Generated artifacts must never be hand-edited:
 
 ```powershell
@@ -110,7 +121,7 @@ pwsh eng/version.ps1          # regenerate after changing VERSION
 pwsh eng/version.ps1 -Check   # verify generated files are current (used in CI)
 ```
 
-Git tags carry a `v` prefix: `v0.00.13.11.26`. See
+Git tags carry a `v` prefix: `v0.01.13.11.26`. See
 [ADR 0001](docs/decisions/0001-versioning.md) for the mapping to Android `versionCode` and the
 Dart `pubspec.yaml` constraint.
 

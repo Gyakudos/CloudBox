@@ -17,10 +17,14 @@ import (
 	"time"
 
 	"github.com/Gyakudos/CloudBox/agent/internal/api"
+	"github.com/Gyakudos/CloudBox/agent/internal/blob"
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
 	"github.com/Gyakudos/CloudBox/agent/internal/discovery"
+	"github.com/Gyakudos/CloudBox/agent/internal/folder"
 	"github.com/Gyakudos/CloudBox/agent/internal/identity"
+	"github.com/Gyakudos/CloudBox/agent/internal/mdns"
 	"github.com/Gyakudos/CloudBox/agent/internal/pairing"
+	"github.com/Gyakudos/CloudBox/agent/internal/safepath"
 	"github.com/Gyakudos/CloudBox/agent/internal/version"
 	"github.com/Gyakudos/CloudBox/agent/internal/volume"
 )
@@ -33,6 +37,10 @@ func runServe(args []string) int {
 	addr := fs.String("addr", ":"+strconv.Itoa(defaultPort), "HTTPS listen address")
 	name := fs.String("name", defaultServerName(), "display name shown in the app")
 	pairTTL := fs.Duration("pair-ttl", 5*time.Minute, "lifetime of a pairing token")
+	syncRoot := fs.String("sync-root", filepath.Join(defaultDataDir(), "CloudBox"), "folder that receives backups; the phone picks a drive, this is the root on it")
+	syncName := fs.String("sync-name", "CloudBox", "display name for the sync folder")
+	blobCacheMB := fs.Int("blob-cache-mb", 2048, "blob cache size cap in MiB")
+	advertise := fs.Bool("mdns", true, "advertise cloudbox.local over mDNS")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -48,10 +56,31 @@ func runServe(args []string) int {
 
 	pairings := pairing.NewManager(*pairTTL)
 
+	// The transfer core: a bounded blob cache and the sync folders the phone may write into.
+	blobs, err := blob.Open(filepath.Join(*dir, "cache"), int64(*blobCacheMB)<<20)
+	if err != nil {
+		logger.Error("open blob store", "err", err)
+		return 1
+	}
+
+	finalizer, err := folder.New(*syncRoot, safepath.DefaultPolicy())
+	if err != nil {
+		logger.Error("open sync folder", "root", *syncRoot, "err", err)
+		return 1
+	}
+	folders := folder.NewRegistry()
+	if err := folders.Register("default", *syncName, finalizer); err != nil {
+		logger.Error("register sync folder", "err", err)
+		return 1
+	}
+	logger.Info("sync folder ready", "id", "default", "root", finalizer.Root)
+
 	srv := api.New(api.Options{
 		Identity:   ident,
 		Pairing:    pairings,
 		Devices:    devices.NewStore(),
+		Blobs:      blobs,
+		Folders:    folders,
 		Volumes:    volume.List,
 		ServerName: *name,
 		Version:    version.Version,
@@ -84,7 +113,35 @@ func runServe(args []string) int {
 		logger.Warn("could not write pairing payload", "path", payloadPath, "err", err)
 	}
 
-	printBanner(ident, *name, port, expires, *pairTTL, payloadPath, raw)
+	// The QR image is what the user actually scans. The payload itself is public (it is shown
+	// on screen), but the file is still written 0600: it carries a live pairing token.
+	qrPath := filepath.Join(*dir, "pairing.png")
+	qrWritten := false
+	if png, err := pairing.QRPNG(string(raw)); err != nil {
+		logger.Warn("could not render QR image", "err", err)
+	} else if err := os.WriteFile(qrPath, png, 0o600); err != nil {
+		logger.Warn("could not write QR image", "path", qrPath, "err", err)
+	} else {
+		qrWritten = true
+	}
+
+	printBanner(ident, *name, port, expires, *pairTTL, payloadPath, qrPath, qrWritten, raw)
+
+	// Advertise last, once everything that could fail has. The TXT records carry identity only
+	// — never the pairing token, because anyone on the LAN can read them.
+	if *advertise {
+		advertiser, err := mdns.Advertise(
+			mdns.InstanceName(*name),
+			port,
+			mdns.TXTRecords(ident.ServerID, *name, version.Version),
+		)
+		if err != nil {
+			logger.Warn("mDNS advertisement failed; discovery will rely on IP addresses", "err", err)
+		} else {
+			defer advertiser.Close()
+			logger.Info("advertising over mDNS", "service", mdns.Service, "instance", mdns.InstanceName(*name))
+		}
+	}
 
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -115,7 +172,7 @@ func runServe(args []string) int {
 	return 0
 }
 
-func printBanner(ident *identity.Identity, name string, port int, expires time.Time, ttl time.Duration, payloadPath string, payload []byte) {
+func printBanner(ident *identity.Identity, name string, port int, expires time.Time, ttl time.Duration, payloadPath, qrPath string, qrWritten bool, payload []byte) {
 	fmt.Printf("\nCloudBox %s\n", version.Version)
 	fmt.Printf("  server       %s\n", name)
 	fmt.Printf("  listen       https://0.0.0.0:%d\n", port)
@@ -123,7 +180,15 @@ func printBanner(ident *identity.Identity, name string, port int, expires time.T
 	fmt.Printf("  cert pin     %s\n", ident.Pin)
 	fmt.Printf("  pairing ttl  %s (expires %s)\n", ttl, expires.Format(time.RFC3339))
 	fmt.Printf("  payload      %s\n", payloadPath)
-	fmt.Printf("\nPairing payload (render as a QR code for the app):\n%s\n", payload)
+	if qrWritten {
+		fmt.Printf("  qr image     %s\n", qrPath)
+	}
+	fmt.Printf("\nScan this with the CloudBox app:\n")
+	if text, err := pairing.QRText(string(payload)); err == nil {
+		fmt.Print(text)
+	} else {
+		fmt.Printf("\n%s\n", payload)
+	}
 	fmt.Printf("\nSanity check:\n  curl -k https://127.0.0.1:%d/healthz\n\n", port)
 }
 

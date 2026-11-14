@@ -27,7 +27,7 @@ always matches the file tree:
 ```kotlin
 android {
     defaultConfig {
-        // Single source of truth: ../VERSION (0.00.13.11.26)
+        // Single source of truth: ../VERSION (0.01.13.11.26)
         val cloudboxVersion = rootProject.file("../VERSION").readText().trim()
         versionName = cloudboxVersion
         versionCode = (cloudboxVersion.split(".").let { p ->
@@ -38,7 +38,7 @@ android {
 ```
 
 Keep `pubspec.yaml`'s `version:` field in sync with the mirror value printed by
-`eng/version.ps1` (`0.0.13+261113` for this release) — pub's parser rejects the real version
+`eng/version.ps1` (`0.1.13+261113` for this release) - pub's parser rejects the real version
 because of the leading zero in `01`.
 
 ## Layout

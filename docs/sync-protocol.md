@@ -266,23 +266,32 @@ Content-addressed, resumable, verified. No file is ever partially visible at its
 ### 7.1 Upload
 
 ```
-POST /v1/uploads                 {hash, size, folder_id}  → 201 {upload_id, offset: 0}
+POST /v1/uploads                 {hash, size, folder_id}  → 201 {upload_id, offset: 0, complete}
 PATCH /v1/uploads/{upload_id}    body: bytes, header: Content-Range: bytes N-M/size
 PATCH (repeat, on failure)       → 200 {offset: M+1}     (server tells you where to resume)
-GET  /v1/uploads/{upload_id}     → 200 {offset, state}
+GET  /v1/uploads/{upload_id}     → 200 {offset, size, state}
 POST /v1/uploads/{upload_id}/commit  {hash, path, mtime_ms, clock}
-                                 → 200 {committed:true} | 422 HASH_MISMATCH {actual}
+                                 → 200 {committed:true, path, deduped, replaced}
+                                 | 422 HASH_MISMATCH
 ```
 
+`complete: true` on create means the server already holds the content: skip the PATCH phase.
+A PATCH whose `Content-Range` start does not match the server's offset gets `409 OFFSET_MISMATCH`
+with the real `offset` in the body.
+
 Server behaviour:
-1. Bytes land in `.cloudbox/staging/<hash[0:2]>/<hash>.part` with `fsync` before each ack.
-2. On `commit`, re-verify BLAKE3 over the whole staged file. Mismatch → `422`, staging retained
-   for inspection, client re-uploads from `offset 0`.
+1. Bytes land in `.cloudbox/cache/staging/<upload_id>.part` with `fsync` before each ack. The
+   authoritative offset is the staging file's **size on disk**, not in-memory state, so a
+   dropped connection, a retried request, or a server restart all resume from the same place.
+2. On `commit`, re-verify BLAKE3 over the whole staged file. Mismatch → `422 HASH_MISMATCH` and
+   the staging file is **deleted**, not retained: a hostile or buggy client must not be able to
+   fill the disk with content that will never verify. The client re-uploads from `offset 0`.
 3. Dedupe: if `blobs[hash]` already exists and is `verified`, the commit is a metadata-only
    operation — this is why renames, moves, and duplicate photos cost no bandwidth.
-4. Finalize atomically: sanitize the path (§8), `os.Link` (or copy across volumes) into place
-   via a temp name + `os.Rename`. Set mtime **from the source**, so galleries sort by capture date.
-5. Only then update `files` + append the journal entry, in one transaction.
+4. Finalize atomically: sanitize the path (§8), copy (not hard-link) into place via a temp name
+   + `os.Rename`. Set mtime **from the source**, so galleries sort by capture date.
+5. Only then update `files` + append the journal entry, in one transaction. (M1 finalizes the
+   file; the `files` index and journal arrive with the sync engine in M3.)
 
 If the process dies between 4 and 5, the startup reconciler finds a file present with no index
 row and adopts it by hashing — never deletes.

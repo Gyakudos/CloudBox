@@ -17,21 +17,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gyakudos/CloudBox/agent/internal/blob"
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
+	"github.com/Gyakudos/CloudBox/agent/internal/folder"
 	"github.com/Gyakudos/CloudBox/agent/internal/identity"
 	"github.com/Gyakudos/CloudBox/agent/internal/pairing"
 	"github.com/Gyakudos/CloudBox/agent/internal/volume"
 )
 
-// maxBodyBytes caps request bodies. Pair requests are a few hundred bytes; anything larger
-// is a mistake or an attack.
+// maxBodyBytes caps JSON request bodies. Pair requests are a few hundred bytes; anything
+// larger is a mistake or an attack. Upload bytes do not go through this limit; they are
+// bounded by the declared size on the upload itself.
 const maxBodyBytes = 64 << 10
 
-// Options configures a Server. Identity, Pairing and Devices are required.
+// Options configures a Server. Identity, Pairing and Devices are required. Blobs and Folders
+// are required for the upload endpoints; when Blobs is nil those routes are not registered.
 type Options struct {
 	Identity   *identity.Identity
 	Pairing    *pairing.Manager
 	Devices    *devices.Store
+	Blobs      *blob.Store
+	Folders    *folder.Registry
 	Volumes    func() ([]volume.Volume, error)
 	ServerName string
 	Version    string
@@ -66,6 +72,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/pair", s.handlePair)
 	mux.Handle("GET /v1/system/info", s.requireDevice(http.HandlerFunc(s.handleInfo)))
 	mux.Handle("GET /v1/system/volumes", s.requireDevice(http.HandlerFunc(s.handleVolumes)))
+
+	if s.opts.Blobs != nil {
+		mux.Handle("POST /v1/uploads", s.requireDevice(http.HandlerFunc(s.handleCreateUpload)))
+		mux.Handle("PATCH /v1/uploads/{id}", s.requireDevice(http.HandlerFunc(s.handleAppendUpload)))
+		mux.Handle("GET /v1/uploads/{id}", s.requireDevice(http.HandlerFunc(s.handleUploadStatus)))
+		mux.Handle("POST /v1/uploads/{id}/commit", s.requireDevice(http.HandlerFunc(s.handleCommitUpload)))
+	}
 
 	return s.observe(mux)
 }
@@ -222,13 +235,12 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 }
 
 type infoResponse struct {
-	ServerID   string         `json:"server_id"`
-	ServerName string         `json:"server_name"`
-	Version    string         `json:"version"`
-	Platform   string         `json:"platform"`
-	Device     devices.Device `json:"device"`
-	// Folders is a placeholder until M1 lands the folder registry.
-	Folders []string `json:"folders"`
+	ServerID   string          `json:"server_id"`
+	ServerName string          `json:"server_name"`
+	Version    string          `json:"version"`
+	Platform   string          `json:"platform"`
+	Device     devices.Device  `json:"device"`
+	Folders    []folder.Folder `json:"folders"`
 }
 
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
@@ -238,13 +250,18 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	folders := []folder.Folder{}
+	if s.opts.Folders != nil {
+		folders = s.opts.Folders.List()
+	}
+
 	writeJSON(w, http.StatusOK, infoResponse{
 		ServerID:   s.opts.Identity.ServerID,
 		ServerName: s.opts.ServerName,
 		Version:    s.opts.Version,
 		Platform:   runtime.GOOS,
 		Device:     device,
-		Folders:    []string{},
+		Folders:    folders,
 	})
 }
 

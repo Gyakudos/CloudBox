@@ -51,8 +51,11 @@ try {
     New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
     # ---------------------------------------------------------------- boot
+    $syncRoot = Join-Path $dataDir 'syncroot'
+    New-Item -ItemType Directory -Force -Path $syncRoot | Out-Null
+
     $process = Start-Process -FilePath $binary `
-        -ArgumentList @('serve', '--addr', "127.0.0.1:$port", '--dir', $dataDir, '--name', 'SMOKE') `
+        -ArgumentList @('serve', '--addr', "127.0.0.1:$port", '--dir', $dataDir, '--name', 'SMOKE', '--sync-root', $syncRoot) `
         -PassThru `
         -RedirectStandardOutput $outLog `
         -RedirectStandardError $errLog
@@ -124,6 +127,62 @@ try {
         $totalGB = [math]::Round($vol.total_bytes / 1GB, 1)
         Write-Host ("         {0,-4} {1,-12} {2,-7} {3} GB free of {4} GB" -f $vol.name, $vol.label, $vol.fs_type, $freeGB, $totalGB)
     }
+
+    # ---------------------------------------------------------------- QR image
+    $qrPath = Join-Path $dataDir 'pairing.png'
+    if (-not (Test-Path $qrPath)) { Fail "pairing.png was not written" }
+    $qrBytes = [IO.File]::ReadAllBytes($qrPath)
+    $qrMagic = [BitConverter]::ToString($qrBytes[0..7])
+    if ($qrMagic -ne '89-50-4E-47-0D-0A-1A-0A') { Fail "pairing.png is not a PNG (magic $qrMagic)" }
+    Write-Host "qr:      $($qrBytes.Length) byte PNG written"
+
+    # ---------------------------------------------------------------- upload
+    $auth = "Authorization: Bearer $($paired.device_token)"
+    $contentPath = Join-Path $dataDir 'hello.txt'
+    $content = 'hello from the smoke test'
+    Set-Content -Path $contentPath -Value $content -Encoding ascii -NoNewline
+    $size = (Get-Item $contentPath).Length
+    $hash = (& $binary hash $contentPath) -join ''
+
+    $createBody = @{ hash = $hash; size = $size; folder_id = 'default' } | ConvertTo-Json -Compress
+    $createBodyPath = Join-Path $dataDir 'create-upload.json'
+    Set-Content -Path $createBodyPath -Value $createBody -Encoding ascii -NoNewline
+
+    $createRaw = & curl.exe -sk --max-time 5 -X POST -H $auth -H 'Content-Type: application/json' --data-binary "@$createBodyPath" "$base/v1/uploads"
+    $created = ($createRaw -join "`n") | ConvertFrom-Json
+    if (-not $created.upload_id) { Fail "upload create failed: $($createRaw -join ' ')" }
+    Write-Host "upload:  created $($created.upload_id) for $size bytes"
+
+    # Send the bytes, then a deliberately wrong range to prove the resume hint works.
+    $patchRaw = & curl.exe -sk --max-time 5 -X PATCH -H $auth -H "Content-Range: bytes 0-$($size - 1)/$size" --data-binary "@$contentPath" "$base/v1/uploads/$($created.upload_id)"
+    $patched = ($patchRaw -join "`n") | ConvertFrom-Json
+    if ($patched.offset -ne $size) { Fail "append offset = $($patched.offset), want $size" }
+
+    $conflictRaw = & curl.exe -sk --max-time 5 -X PATCH -H $auth -H "Content-Range: bytes 0-0/$size" --data-binary "@$contentPath" "$base/v1/uploads/$($created.upload_id)"
+    if (($conflictRaw -join '') -notmatch 'OFFSET_MISMATCH') {
+        Fail "out-of-order append was not rejected"
+    }
+    Write-Host "resume:  out-of-order append correctly rejected"
+
+    $mtimeMs = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $commitBody = @{ hash = $hash; path = 'DCIM/Smoke/hello.txt'; mtime_ms = $mtimeMs } | ConvertTo-Json -Compress
+    $commitBodyPath = Join-Path $dataDir 'commit-upload.json'
+    Set-Content -Path $commitBodyPath -Value $commitBody -Encoding ascii -NoNewline
+
+    $commitRaw = & curl.exe -sk --max-time 5 -X POST -H $auth -H 'Content-Type: application/json' --data-binary "@$commitBodyPath" "$base/v1/uploads/$($created.upload_id)/commit"
+    $committed = ($commitRaw -join "`n") | ConvertFrom-Json
+    if (-not $committed.committed) { Fail "commit failed: $($commitRaw -join ' ')" }
+
+    $landed = Join-Path $syncRoot 'DCIM\Smoke\hello.txt'
+    if (-not (Test-Path $landed)) { Fail "committed file did not land at $landed" }
+    if ((Get-Content $landed -Raw) -ne $content) { Fail "committed file contents differ" }
+    Write-Host "commit:  $($committed.path) written to the sync folder"
+
+    # Same bytes again: the server should dedupe and skip the transfer entirely.
+    $dedupeRaw = & curl.exe -sk --max-time 5 -X POST -H $auth -H 'Content-Type: application/json' --data-binary "@$createBodyPath" "$base/v1/uploads"
+    $deduped = ($dedupeRaw -join "`n") | ConvertFrom-Json
+    if (-not $deduped.complete) { Fail "re-upload of identical content was not deduped" }
+    Write-Host "dedupe:  identical content recognised, zero bytes re-sent"
 
     Write-Host ""
     Write-Host "SMOKE OK" -ForegroundColor Green

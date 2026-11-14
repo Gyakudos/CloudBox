@@ -31,6 +31,12 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: Cross-compile (linux, darwin, windows)
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/cloudbox
+          GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/cloudbox
+          GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/cloudbox
+
       - name: Vet
         run: go vet ./...
 

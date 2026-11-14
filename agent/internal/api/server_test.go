@@ -12,6 +12,7 @@ import (
 
 	"github.com/Gyakudos/CloudBox/agent/internal/api"
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
+	"github.com/Gyakudos/CloudBox/agent/internal/folder"
 	"github.com/Gyakudos/CloudBox/agent/internal/identity"
 	"github.com/Gyakudos/CloudBox/agent/internal/pairing"
 	"github.com/Gyakudos/CloudBox/agent/internal/volume"
@@ -199,8 +200,8 @@ func TestPairFlow(t *testing.T) {
 		t.Fatalf("info: status = %d, want 200", rec.Code)
 	}
 	var info struct {
-		Device  devices.Device `json:"device"`
-		Folders []string       `json:"folders"`
+		Device  devices.Device  `json:"device"`
+		Folders []folder.Folder `json:"folders"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &info); err != nil {
 		t.Fatalf("decode info: %v", err)

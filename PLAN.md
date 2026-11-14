@@ -331,6 +331,8 @@ Effort assumes one developer, full-time. Halve nothing; double it if it's evenin
 Monorepo, CI, Go agent skeleton with `/healthz`, cert generation, mDNS advertise; Flutter app
 skeleton with pairing screen.
 **Done when:** app finds the agent on the LAN and completes a TLS-pinned handshake.
+**Status:** agent half **done** (`0.01.13.11.26`) — pairing, pin, drive enumeration, QR image
+and mDNS all work. App half blocked on the Flutter SDK.
 
 ### M1 · Shippable one-way backup — 4–6 weeks ⭐ *first real product*
 Pairing QR, volume probe + drive picker, source selection, full+incremental scan, resumable
@@ -338,6 +340,9 @@ Pairing QR, volume probe + drive picker, source selection, full+incremental scan
 progress UI, retry.
 **Done when:** 20 GB / 20k photos back up unattended overnight, resume after a mid-transfer
 reboot, and produce a byte-identical target with correct mtimes.
+**Status:** transfer core **done** (`0.01.13.11.26`) — resumable verified upload, atomic
+finalize, dedupe, proven by `eng/smoke.ps1`. Remaining: backup-mode journal, download path,
+and the app side (scan, source selection, progress UI).
 
 ### M2 · Unattended & trustworthy — 2–3 weeks
 WorkManager scheduling + foreground service, network/battery policies, OEM help card,
@@ -442,12 +447,19 @@ CloudBox/
 
 1. Answer the open questions above (or accept the leanings).
 2. ~~`git init` + monorepo skeleton + CI.~~ Done at `0.00.13.11.26`.
-3. Write `docs/sync-protocol.md` v0.2 → freeze the wire format before either side gets cosy
-   with its own assumptions.
+3. ~~Write `docs/sync-protocol.md` → freeze the wire format before either side gets cosy with
+   its own assumptions.~~ Done.
 4. ~~M0 agent half: pinned TLS, `/healthz`, pairing, drive enumeration.~~ Done at
-   `0.00.13.11.26` and proven end to end by `eng/smoke.ps1`. Still missing from M0: rendering
-   the payload as an actual QR image, and mDNS advertisement of `cloudbox.local`.
-5. M0 app half: QR scan → pin check → pair → drive picker. Blocked on Flutter.
+   `0.00.13.11.26` and proven end to end by `eng/smoke.ps1`.
+5. ~~M0 gaps: render the payload as a QR image, advertise `cloudbox.local` over mDNS.~~ Done at
+   `0.01.13.11.26`.
+6. ~~M1 transfer core (agent half): content-addressed staging, resumable upload, verified
+   commit, atomic finalize into a user-chosen folder, dedupe.~~ Done at `0.01.13.11.26` and
+   proven end to end by `eng/smoke.ps1`. The `files` index and journal entries that step 5 of
+   §7.1 describes arrive with the sync engine in M3.
+7. M1 remaining: the backup-mode journal and its append-only log, then the download path
+   (`GET /v1/blobs/{hash}`) the phone needs to restore.
+8. M0 app half: QR scan → pin check → pair → drive picker → upload a photo. Blocked on Flutter.
 
 **Toolchain status.** Go 1.27.4 is installed and the agent builds, vets, tests and
 cross-compiles for Linux and macOS. `flutter`/`dart` and the Android SDK are still missing, so

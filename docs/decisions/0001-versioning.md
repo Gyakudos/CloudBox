@@ -21,15 +21,16 @@ pre-alpha dogfooding.
 The version is **`MAJOR.MINOR.DD.MM.YY`**, zero-padded, exactly five dot-separated parts:
 
 ```
-0.00.13.11.26
+0.01.13.11.26
 │ │  └─┴─┴── 2026-11-13  (day . month . two-digit year)
-│ └───────── minor: 00 for the whole pre-alpha, reserved for protocol generations
+│ └───────── minor: the development line (01 = M1, the transfer core)
 └─────────── major: 0 until the protocol is frozen and v1 ships
 ```
 
 - `MAJOR` stays `0` while the sync protocol may break between builds.
-- `MINOR` is `00` throughout pre-alpha. It is not a build counter — it is held in reserve so
-  that a breaking protocol change can be signalled as `0.01.…` without touching `MAJOR`.
+- `MINOR` names the development line, so it doubles as a milestone marker: `00` was the M0
+  skeleton (pairing, identity, drive enumeration), `01` is M1 (transfer core). It is not a
+  build counter — the date carries that.
 - The date is the day the version is *cut*, in the owner's local time. No timezone arithmetic,
   no UTC conversion — a version is a label, not a timestamp.
 - The date is encoded as day, then month, then year (`DD.MM.YY`) because that is the ordering
@@ -38,15 +39,15 @@ The version is **`MAJOR.MINOR.DD.MM.YY`**, zero-padded, exactly five dot-separat
 `VERSION` at the repository root is the **single source of truth**. Everything else is
 generated or derived:
 
-| Artifact | Value for `0.00.13.11.26` | Mechanism |
+| Artifact | Value for `0.01.13.11.26` | Mechanism |
 |----------|---------------------------|-----------|
-| `VERSION` | `0.00.13.11.26` | hand-edited, the only editable copy |
-| git tag | `v0.00.13.11.26` | annotated tag at release |
-| Go `version.Version` | `0.00.13.11.26` | `agent/internal/version/generated.go` |
-| Dart `kCloudBoxVersion` | `0.00.13.11.26` | `app/lib/core/gen/version.dart` |
-| Android `versionName` | `0.00.13.11.26` | read from `VERSION` by Gradle |
+| `VERSION` | `0.01.13.11.26` | hand-edited, the only editable copy |
+| git tag | `v0.01.13.11.26` | annotated tag at release |
+| Go `version.Version` | `0.01.13.11.26` | `agent/internal/version/generated.go` |
+| Dart `kCloudBoxVersion` | `0.01.13.11.26` | `app/lib/core/gen/version.dart` |
+| Android `versionName` | `0.01.13.11.26` | read from `VERSION` by Gradle |
 | Android `versionCode` | `261113` | `YYMMDD` = `26 11 13` |
-| Dart `pubspec.yaml` version | `0.0.13+261113` | pub requires strict semver |
+| Dart `pubspec.yaml` version | `0.1.13+261113` | pub requires strict semver |
 
 Generated files are produced by `eng/version.ps1`. CI runs `eng/version.ps1 -Check` and fails
 if a generated file has drifted from `VERSION`.
@@ -63,7 +64,7 @@ if a generated file has drifted from `VERSION`.
 **Bad / accepted**
 
 - The string does **not** sort lexicographically across month and year boundaries
-  (`0.00.05.12.26` < `0.00.13.11.26` is false). Ordering authority is the git tag and
+  (`0.01.05.12.26` < `0.01.13.11.26` is false). Ordering authority is the git tag and
   `CHANGELOG.md`, not `sort`.
 - `versionCode` has day granularity, so **at most one installable release per day**. A second
   build on the same day reuses the code and is not installable over the first. Pre-release
@@ -79,9 +80,9 @@ if a generated file has drifted from `VERSION`.
 | Option | Why rejected |
 |--------|--------------|
 | Strict SemVer (`0.1.0`) | Requires deciding what "breaking" means for a two-artifact pre-alpha; adds a decision per commit and communicates nothing useful to a single developer. |
-| Calendar versioning `YYYY.MM.DD` (`2026.11.13`) | Valid — rejected only because the owner specified the `0.00.DD.MM.YY` layout. Equivalent information. |
+| Calendar versioning `YYYY.MM.DD` (`2026.11.13`) | Valid — rejected only because the owner specified the `0.01.DD.MM.YY` layout. Equivalent information. |
 | Build number only (`build 42`) | Loses the date; hard to reason about a build found on an old phone. |
-| Git-describe (`0.00.13+3-gabc1234`) | Excellent for CI provenance, poor for store display. Kept as a *supplement* via `version.Commit`, not as the primary string. |
+| Git-describe (`0.01.13+3-gabc1234`) | Excellent for CI provenance, poor for store display. Kept as a *supplement* via `version.Commit`, not as the primary string. |
 
 ## When this should be revisited
 

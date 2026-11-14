@@ -6,7 +6,7 @@
 .DESCRIPTION
     Every file written by this script is generated. Never hand-edit them; edit VERSION instead.
 
-    VERSION format: MAJOR.MINOR.DD.MM.YY  (e.g. 0.00.13.11.26 = 2026-11-13)
+    VERSION format: MAJOR.MINOR.DD.MM.YY  (e.g. 0.01.13.11.26 = 2026-11-13)
     See docs/decisions/0001-versioning.md.
 
 .PARAMETER Check
@@ -52,7 +52,7 @@ if (-not (Test-Path -LiteralPath $versionPath)) {
 $version = (Get-Content -LiteralPath $versionPath -Raw).Trim()
 $pattern = '^\d+\.\d{2}\.\d{2}\.\d{2}\.\d{2}$'
 if ($version -notmatch $pattern) {
-    throw "VERSION '$version' does not match MAJOR.MINOR.DD.MM.YY (e.g. 0.00.13.11.26)"
+    throw "VERSION '$version' does not match MAJOR.MINOR.DD.MM.YY (e.g. 0.01.13.11.26)"
 }
 
 $parts  = $version.Split('.')
