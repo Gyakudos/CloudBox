@@ -1,6 +1,6 @@
 # CloudBox — Product & Technical Plan
 
-**Status:** Draft v0.1 · **Date:** 2026-11-13 · **Owner:** you
+**Status:** Draft v0.1 · **Date:** 2026-11-15 · **Owner:** you
 
 ---
 
@@ -331,8 +331,9 @@ Effort assumes one developer, full-time. Halve nothing; double it if it's evenin
 Monorepo, CI, Go agent skeleton with `/healthz`, cert generation, mDNS advertise; Flutter app
 skeleton with pairing screen.
 **Done when:** app finds the agent on the LAN and completes a TLS-pinned handshake.
-**Status:** agent half **done** (`0.01.13.11.26`) — pairing, pin, drive enumeration, QR image
-and mDNS all work. App half blocked on the Flutter SDK.
+**Status:** **done** (`0.01.15.11.26`) — the agent serves a pinned-TLS API with pairing, drive
+enumeration, a QR image and mDNS, and the app pairs, pins, and lists real drives. The QR *image*
+is rendered, but the app still pastes the code (no camera scanner yet).
 
 ### M1 · Shippable one-way backup — 4–6 weeks ⭐ *first real product*
 Pairing QR, volume probe + drive picker, source selection, full+incremental scan, resumable
@@ -340,9 +341,10 @@ Pairing QR, volume probe + drive picker, source selection, full+incremental scan
 progress UI, retry.
 **Done when:** 20 GB / 20k photos back up unattended overnight, resume after a mid-transfer
 reboot, and produce a byte-identical target with correct mtimes.
-**Status:** transfer core **done** (`0.01.13.11.26`) — resumable verified upload, atomic
-finalize, dedupe, proven by `eng/smoke.ps1`. Remaining: backup-mode journal, download path,
-and the app side (scan, source selection, progress UI).
+**Status:** end-to-end upload **working** (`0.01.15.11.26`) — pick a drive, pick files, and a
+resumable, verified transfer finalizes them atomically on the PC; proven by `eng/smoke.ps1` and
+`flutter test`. Remaining: the backup-mode journal, automatic MediaStore scan/source selection
+(the app picks files by hand today), and the download path.
 
 ### M2 · Unattended & trustworthy — 2–3 weeks
 WorkManager scheduling + foreground service, network/battery policies, OEM help card,
@@ -459,10 +461,10 @@ CloudBox/
    §7.1 describes arrive with the sync engine in M3.
 7. M1 remaining: the backup-mode journal and its append-only log, then the download path
    (`GET /v1/blobs/{hash}`) the phone needs to restore.
-8. M0 app half: QR scan → pin check → pair → drive picker → upload a photo. Blocked on Flutter.
+8. ~~M0 app half: pin check → pair → drive picker.~~ Done at `0.01.15.11.26`; M1 added the file
+   picker and the resumable transfer engine on top. QR *scan* is still paste-the-code — a camera
+   scanner arrives with the setup-wizard polish.
 
-**Toolchain status.** Go 1.27.4 is installed and the agent builds, vets, tests and
-cross-compiles for Linux and macOS. `flutter`/`dart` and the Android SDK are still missing, so
-the app cannot be scaffolded or run yet. JDK 21 is present at `F:\dev\jdk21`. Install order
-that unblocks the most work: Flutter (bundles Dart) → Android SDK via
-`flutter doctor --android-licenses`.
+**Toolchain status.** Go 1.27.4 builds, vets, tests and cross-compiles the agent. Flutter 3.47.8
+(Dart 3.13.7), the Android SDK and JDK 21 build, analyze and test the app, and CI pins Flutter
+3.47.8. Both halves build on this machine and produce the artifacts attached to each release.

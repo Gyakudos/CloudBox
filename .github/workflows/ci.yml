@@ -153,3 +153,7 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+          # CloudBox is pre-alpha: every tagged build is a pre-release, and none of them should
+          # be presented as the stable "Latest" download.
+          prerelease: true
+          make_latest: false

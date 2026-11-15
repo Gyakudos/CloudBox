@@ -51,3 +51,25 @@ func names(vols []Volume) []string {
 	}
 	return out
 }
+
+func TestFindMatchesExactlyThenCaseInsensitively(t *testing.T) {
+	vols := []Volume{
+		{Name: "C:", Path: `C:\`},
+		{Name: "E:", Path: `E:\`},
+		{Name: "/Volumes/Data", Path: "/Volumes/Data/"},
+	}
+
+	if v, ok := Find(vols, "E:"); !ok || v.Path != `E:\` {
+		t.Fatalf("exact match = %+v, %v", v, ok)
+	}
+	// Windows drive letters are case-insensitive: the phone may echo back "e:".
+	if v, ok := Find(vols, "e:"); !ok || v.Path != `E:\` {
+		t.Fatalf("case-insensitive match = %+v, %v", v, ok)
+	}
+	if _, ok := Find(vols, "Z:"); ok {
+		t.Fatal("Find matched a volume that does not exist")
+	}
+	if _, ok := Find(vols, "  "); ok {
+		t.Fatal("Find matched the empty name")
+	}
+}

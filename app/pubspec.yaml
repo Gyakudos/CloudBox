@@ -3,10 +3,10 @@ description: "CloudBox — back up your phone to your own PC. No cloud, no subsc
 publish_to: 'none'
 
 # Mirror of the repository VERSION file. pub cannot express the five-part scheme
-# (0.01.13.11.26) or the leading zero in "01", so the authoritative string lives in
+# (0.01.15.11.26) or the leading zero in "01", so the authoritative string lives in
 # lib/core/gen/version.dart and the Android manifest version is overridden in
 # android/app/build.gradle.kts. eng/version.ps1 keeps this line in sync.
-version: 0.1.13+261113
+version: 0.1.15+261115
 
 environment:
   sdk: ^3.13.7
@@ -20,6 +20,14 @@ dependencies:
   # Pure-Dart SHA-256 for TLS certificate pinning. No native code, so it cannot break the
   # Android build.
   crypto: ^3.0.6
+
+  # Pure-Dart BLAKE3, the content hash the transfer protocol is built on. The package only
+  # exports one-shot helpers publicly, so the streaming HashContext is imported from its src/
+  # (see lib/core/hashing.dart) to hash multi-gigabyte videos without loading them into RAM.
+  blake3_dart: ^1.0.0
+
+  # Native file and directory picker. Used to choose the files to back up from the phone.
+  file_picker: ^13.3.3
 
 dev_dependencies:
   flutter_test:

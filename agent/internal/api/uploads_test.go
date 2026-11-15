@@ -293,10 +293,43 @@ func TestUploadDedupeSkipsTransfer(t *testing.T) {
 		t.Fatalf("commit: %d body %s", rec.Code, rec.Body.String())
 	}
 
-	// The same bytes again: the server should say "complete", costing zero bandwidth.
+	// The same bytes again: the server should say "complete", costing zero bandwidth, and the
+	// commit must still place the content — a metadata-only copy out of the cache.
 	second := h.create(hash, int64(len(data)), testFolderID)
 	if !second.Complete {
 		t.Fatal("second upload of identical content was not reported as complete")
+	}
+	if second.UploadID == "" {
+		t.Fatal("a deduped upload must still carry an upload_id so it can be committed")
+	}
+	if second.Offset != int64(len(data)) {
+		t.Fatalf("deduped offset = %d, want %d", second.Offset, len(data))
+	}
+
+	rec := h.json(http.MethodPost, "/v1/uploads/"+second.UploadID+"/commit", map[string]any{
+		"hash": hash, "path": "two.jpg",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("deduped commit: status %d body %s", rec.Code, rec.Body.String())
+	}
+	var committed struct {
+		Committed bool `json:"committed"`
+		Deduped   bool `json:"deduped"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &committed); err != nil {
+		t.Fatalf("decode commit: %v", err)
+	}
+	if !committed.Committed || !committed.Deduped {
+		t.Fatalf("commit = %+v, want committed and deduped", committed)
+	}
+
+	// The second path must now hold the same bytes, despite no PATCH ever being sent.
+	onDisk, err := os.ReadFile(filepath.Join(h.root, "two.jpg"))
+	if err != nil {
+		t.Fatalf("deduped file was not finalized: %v", err)
+	}
+	if !bytes.Equal(onDisk, data) {
+		t.Fatal("deduped file content differs from the original")
 	}
 }
 

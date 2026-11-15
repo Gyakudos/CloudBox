@@ -41,10 +41,20 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Already cached: nothing to transfer. Answer as if an upload had completed instantly.
+	// Already cached: the bytes are here, so the client skips the PATCH phase. It still gets an
+	// upload ID, because commit is what places the content at the requested path — and for a
+	// deduped upload that commit is a metadata-only copy out of the cache.
 	if s.opts.Blobs.Has(req.Hash) {
-		writeJSON(w, http.StatusCreated, createUploadResponse{Complete: true})
-		return
+		if upload, err := s.opts.Blobs.CreateDedupedUpload(req.Hash, req.Size); err == nil {
+			upload.FolderID = req.FolderID
+			writeJSON(w, http.StatusCreated, createUploadResponse{
+				UploadID: upload.ID,
+				Offset:   upload.Size,
+				Complete: true,
+			})
+			return
+		}
+		// The cache changed under us (a concurrent sweep). Fall through to a normal upload.
 	}
 
 	upload, err := s.opts.Blobs.CreateUpload(req.Hash, req.Size)

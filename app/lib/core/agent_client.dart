@@ -17,21 +17,25 @@ import 'dart:io';
 import 'models.dart';
 import 'pairing_payload.dart';
 import 'pinning.dart';
+import 'upload_api.dart';
 
 /// An error with a message written for the person holding the phone.
 class CloudBoxException implements Exception {
-  CloudBoxException(this.message, {this.code, this.statusCode});
+  CloudBoxException(this.message, {this.code, this.statusCode, this.offset});
 
   final String message;
   final String? code;
   final int? statusCode;
+
+  /// For a `409 OFFSET_MISMATCH`, the offset the PC actually expects next. Null otherwise.
+  final int? offset;
 
   @override
   String toString() => message;
 }
 
 /// A client bound to one PC, authenticated with one device token.
-class CloudBoxClient {
+class CloudBoxClient implements UploadApi {
   CloudBoxClient._(this._http, this._endpoints, this._pin);
 
   /// Builds a client from a scanned pairing payload. Does not perform any I/O.
@@ -101,6 +105,93 @@ class CloudBoxClient {
         .toList(growable: false);
   }
 
+  /// Chooses the drive (by volume name) and subfolder that backups land in.
+  ///
+  /// The PC resolves the name against a fresh enumeration of its own drives and roots the
+  /// default sync folder there, so an unplugged drive is a clear error rather than a write to
+  /// the wrong place.
+  Future<CloudBoxFolder> setDestination({
+    required String volume,
+    String subfolder = '',
+  }) async {
+    final json = await _request('PUT', '/v1/system/destination', authenticated: true, body: {
+      'volume': volume,
+      'subfolder': subfolder,
+    });
+    final folder = json['folder'];
+    if (folder is! Map) {
+      throw CloudBoxException('The PC did not confirm the destination.');
+    }
+    return CloudBoxFolder.fromJson(folder.cast<String, dynamic>());
+  }
+
+  @override
+  Future<UploadTicket> createUpload({
+    required String hash,
+    required int size,
+    String folderId = 'default',
+  }) async {
+    final json = await _request('POST', '/v1/uploads', authenticated: true, body: {
+      'hash': hash,
+      'size': size,
+      'folder_id': folderId,
+    });
+    return UploadTicket.fromJson(json);
+  }
+
+  @override
+  Future<int> appendUpload(
+    String uploadId, {
+    required int offset,
+    required List<int> chunk,
+    required int totalSize,
+  }) async {
+    if (chunk.isEmpty) return offset;
+    final end = offset + chunk.length - 1;
+    final json = await _withFailover(
+      (base) => _requestAt(
+        base,
+        'PATCH',
+        '/v1/uploads/${Uri.encodeComponent(uploadId)}',
+        bodyBytes: chunk,
+        headers: {'Content-Range': 'bytes $offset-$end/$totalSize'},
+        authenticated: true,
+      ),
+    );
+    return (json['offset'] as num?)?.toInt() ?? offset + chunk.length;
+  }
+
+  @override
+  Future<UploadStatus> uploadStatus(String uploadId) async {
+    final json = await _request(
+      'GET',
+      '/v1/uploads/${Uri.encodeComponent(uploadId)}',
+      authenticated: true,
+    );
+    return UploadStatus.fromJson(json);
+  }
+
+  @override
+  Future<CommitResult> commitUpload(
+    String uploadId, {
+    required String hash,
+    required String path,
+    int? mtimeMs,
+  }) async {
+    final json = await _request(
+      'POST',
+      '/v1/uploads/${Uri.encodeComponent(uploadId)}/commit',
+      authenticated: true,
+      body: {
+        'hash': hash,
+        'path': path,
+        // The agent's Clock field is a string, so mtime is the only timestamp we send.
+        if (mtimeMs != null && mtimeMs > 0) 'mtime_ms': mtimeMs,
+      },
+    );
+    return CommitResult.fromJson(json);
+  }
+
   /// Releases the underlying connection pool.
   void close() => _http.close(force: true);
 
@@ -122,19 +213,17 @@ class CloudBoxClient {
   }
 
   /// Tries each endpoint in turn, promoting the first that answers.
-  Future<Map<String, dynamic>> _request(
-    String method,
-    String path, {
-    Object? body,
-    bool authenticated = false,
-  }) async {
+  ///
+  /// Only transport failures move us to the next address: a request the PC actively refused is
+  /// the PC's answer, and retrying it elsewhere would just hide the error.
+  Future<T> _withFailover<T>(Future<T> Function(Uri base) attempt) async {
     _pinMismatch = false;
 
     for (final base in _orderedEndpoints()) {
       try {
-        final json = await _requestAt(base, method, path, body: body, authenticated: authenticated);
+        final result = await attempt(base);
         _preferred = base;
-        return json;
+        return result;
       } on IOException {
         // Transport failure: try the next address the PC advertised.
       } on TimeoutException {
@@ -155,16 +244,30 @@ class CloudBoxClient {
     );
   }
 
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Object? body,
+    bool authenticated = false,
+  }) {
+    return _withFailover(
+      (base) => _requestAt(base, method, path, body: body, authenticated: authenticated),
+    );
+  }
+
   Future<Map<String, dynamic>> _requestAt(
     Uri base,
     String method,
     String path, {
     Object? body,
+    List<int>? bodyBytes,
+    Map<String, String> headers = const {},
     bool authenticated = false,
   }) async {
     final request = await _http.openUrl(method, base.replace(path: path));
     request.followRedirects = false;
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+    headers.forEach(request.headers.set);
 
     if (authenticated) {
       final token = _deviceToken;
@@ -174,7 +277,11 @@ class CloudBoxClient {
       request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
     }
 
-    if (body != null) {
+    if (bodyBytes != null) {
+      request.headers.contentType = ContentType.binary;
+      request.headers.contentLength = bodyBytes.length;
+      request.add(bodyBytes);
+    } else if (body != null) {
       final bytes = utf8.encode(jsonEncode(body));
       request.headers.contentType = ContentType('application', 'json', charset: 'utf-8');
       request.headers.contentLength = bytes.length;
@@ -202,17 +309,23 @@ class CloudBoxClient {
 
     var message = 'The PC refused the request (HTTP ${response.statusCode}).';
     String? code;
-    if (decoded is Map && decoded['error'] is Map) {
-      final error = (decoded['error'] as Map).cast<String, dynamic>();
-      code = error['code'] as String?;
-      message = error['message'] as String? ?? message;
+    int? offset;
+    if (decoded is Map) {
+      final error = decoded['error'];
+      if (error is Map) {
+        code = error['code'] as String?;
+        message = error['message'] as String? ?? message;
+      }
+      // A 409 carries where the upload should resume; surface it so the engine can skip ahead
+      // without re-sending bytes the PC already has.
+      offset = (decoded['offset'] as num?)?.toInt();
     }
     if (response.statusCode == 401 && code == 'INVALID_PAIRING_TOKEN') {
       message = 'That pairing code has already been used or has expired. Show a fresh code on the PC.';
     } else if (response.statusCode == 401) {
       message = 'The PC no longer recognises this device. Re-pair to continue.';
     }
-    throw CloudBoxException(message, code: code, statusCode: response.statusCode);
+    throw CloudBoxException(message, code: code, statusCode: response.statusCode, offset: offset);
   }
 
   List<Uri> _orderedEndpoints() {

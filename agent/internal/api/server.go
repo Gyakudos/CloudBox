@@ -39,10 +39,13 @@ type Options struct {
 	Blobs      *blob.Store
 	Folders    *folder.Registry
 	Volumes    func() ([]volume.Volume, error)
-	ServerName string
-	Version    string
-	StartedAt  time.Time
-	Logger     *slog.Logger
+	// SetDestination resolves a volume the phone picked into the default sync folder. Nil
+	// disables the destination endpoint.
+	SetDestination func(volumeName, subfolder string) (folder.Folder, error)
+	ServerName     string
+	Version        string
+	StartedAt      time.Time
+	Logger         *slog.Logger
 }
 
 // Server serves the agent HTTP API.
@@ -72,6 +75,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/pair", s.handlePair)
 	mux.Handle("GET /v1/system/info", s.requireDevice(http.HandlerFunc(s.handleInfo)))
 	mux.Handle("GET /v1/system/volumes", s.requireDevice(http.HandlerFunc(s.handleVolumes)))
+
+	if s.opts.SetDestination != nil {
+		mux.Handle("PUT /v1/system/destination", s.requireDevice(http.HandlerFunc(s.handleSetDestination)))
+	}
 
 	if s.opts.Blobs != nil {
 		mux.Handle("POST /v1/uploads", s.requireDevice(http.HandlerFunc(s.handleCreateUpload)))

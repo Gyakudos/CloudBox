@@ -4,6 +4,44 @@ All notable changes to CloudBox are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses a
 date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md).
 
+## [0.01.15.11.26] — 2026-11-15
+
+M1 continues: the drive you pick now decides where your files land, and the phone can send them.
+Choose a drive, choose the files, and a resumable, hash-verified transfer writes them onto that
+drive. From this release on, tagged builds are published as **pre-releases** while CloudBox is
+pre-alpha.
+
+### Added
+
+- **Destination selection** (`internal/destination`) — `PUT /v1/system/destination {volume,
+  subfolder}` turns the drive picker into a real choice. The phone sends the *name* of a volume
+  the agent itself enumerated, never a path; the agent resolves it against a fresh enumeration,
+  roots the default folder at `<drive>\<subfolder>` (default `CloudBox`), registers it under the
+  fixed `default` ID, and persists the choice to `<data dir>/destination.json` atomically. An
+  unplugged or stale drive returns `ErrUnknownVolume`, and the subfolder passes through the same
+  `safepath` rules as an uploaded path. A `--sync-root` given on the command line is the
+  operator's decision and still wins on every start.
+- **Upload flow in the app** — "Use this drive" records the destination and opens a send screen
+  (`lib/ui/send_screen.dart`, `lib/ui/drives_screen.dart`) that picks files with the native
+  picker and runs them through a Flutter-free transfer engine (`lib/core/transfer.dart`):
+  sequential transfers in 4 MiB chunks with resume, dedupe, cancel and per-file progress.
+- **Streaming BLAKE3 in Dart** (`lib/core/hashing.dart`) — the content hash the transfer protocol
+  is built on, computed over a stream so a multi-gigabyte video never enters memory. The
+  cross-language vectors are locked by tests against the Go agent's `cloudbox hash`.
+- `UploadApi` (`lib/core/upload_api.dart`) — the seam the transfer engine talks to, so its
+  ordering, resume, dedupe and failure paths are unit-tested against a fake without a live agent.
+
+### Changed
+
+- `POST /v1/uploads` now returns an `upload_id` when the content is already in the dedupe cache,
+  so the phone can commit a duplicate as a metadata-only copy instead of re-sending it; `blob`
+  gained a deduped upload whose append, progress and commit paths are no-ops.
+- **Releases are pre-releases.** The release workflow marks every tag `prerelease: true` and
+  `make_latest: false` — CloudBox is pre-alpha, so installs are for dogfooding, not a stable
+  download.
+- The Android build disables Kotlin incremental compilation (`kotlin.incremental=false`), which
+  aborts when the pub cache and the project live on different Windows drives (KT-57286).
+
 ## [0.01.13.11.26] — 2026-11-13
 
 M1: the transfer core. A file now travels phone → PC, is verified against its content hash, and
@@ -93,5 +131,6 @@ Initial repository scaffold. No functional releases yet; the version scheme star
 - Tests across identity, pairing, devices, volume, discovery and the API pair flow.
 - CI workflow: version-drift check, `go build`, `go vet`, `go test`.
 
+[0.01.15.11.26]: https://github.com/Gyakudos/CloudBox/releases/tag/v0.01.15.11.26
 [0.01.13.11.26]: https://github.com/Gyakudos/CloudBox/releases/tag/v0.01.13.11.26
 [0.00.13.11.26]: https://github.com/Gyakudos/CloudBox/releases/tag/v0.00.13.11.26

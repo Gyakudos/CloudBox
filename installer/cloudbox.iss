@@ -7,7 +7,7 @@
 ;
 ; or directly:
 ;
-;     ISCC.exe /DVersion=0.01.13.11.26 cloudbox.iss
+;     ISCC.exe /DVersion=0.01.15.11.26 cloudbox.iss
 ;
 ; The installer deliberately ships only the agent. The Flutter toolchain is a build-time
 ; dependency for the Android app, not something the PC needs at runtime.

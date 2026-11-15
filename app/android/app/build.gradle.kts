@@ -19,7 +19,7 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // The single source of truth is the repository VERSION file (0.01.13.11.26). Neither
+        // The single source of truth is the repository VERSION file (0.01.15.11.26). Neither
         // pubspec.yaml (strict semver) nor Gradle can express that scheme, so we read the file
         // directly and derive both values here. eng/version.ps1 -Check verifies they agree.
         val cloudboxVersion = rootProject.file("../../VERSION").readText().trim()

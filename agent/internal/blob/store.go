@@ -105,7 +105,10 @@ type Upload struct {
 	path  string
 	store *Store
 	done  bool
-	mu    sync.Mutex
+	// deduped marks an upload whose content is already in the verified cache. It has no staging
+	// file and expects no bytes; its commit is a metadata-only copy out of the cache.
+	deduped bool
+	mu      sync.Mutex
 }
 
 // CreateUpload reserves a staging file for content with the given hash and size.
@@ -138,6 +141,41 @@ func (s *Store) CreateUpload(hash string, size int64) (*Upload, error) {
 	}
 
 	upload := &Upload{ID: id, Hash: hash, Size: size, path: path, store: s}
+
+	s.mu.Lock()
+	s.uploads[id] = upload
+	s.mu.Unlock()
+
+	return upload, nil
+}
+
+// CreateDedupedUpload reserves an upload for content the cache already holds. No staging file
+// is created and no bytes are expected: the client skips the PATCH phase and commits, which for
+// a deduped upload is a metadata-only copy from the cache to the requested path. This is why a
+// second copy of a photo costs no bandwidth but still lands in the folder.
+//
+// It returns ErrNotFound when the content is not cached, so a caller that raced a cache sweep
+// gets a clear "upload it for real" signal rather than a phantom upload that can never commit.
+func (s *Store) CreateDedupedUpload(hash string, size int64) (*Upload, error) {
+	hash, err := normaliseHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	cached, ok := s.Size(hash)
+	if !ok {
+		return nil, ErrNotFound
+	}
+	// The cached blob's size is authoritative: the hash identifies the content, so any size the
+	// client declared is redundant and not to be trusted over what we actually hold.
+	_ = size
+
+	idBytes := make([]byte, 16)
+	if _, err := rand.Read(idBytes); err != nil {
+		return nil, fmt.Errorf("blob: generate upload id: %w", err)
+	}
+	id := hex.EncodeToString(idBytes)
+
+	upload := &Upload{ID: id, Hash: hash, Size: cached, store: s, deduped: true}
 
 	s.mu.Lock()
 	s.uploads[id] = upload
@@ -269,6 +307,10 @@ func (u *Upload) Progress() (offset, size int64) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
+	if u.deduped {
+		// Already complete as far as the wire is concerned: nothing more to send.
+		return u.Size, u.Size
+	}
 	if info, err := os.Stat(u.path); err == nil {
 		return info.Size(), u.Size
 	}
@@ -283,6 +325,11 @@ func (u *Upload) WriteAt(offset int64, r io.Reader) (int64, error) {
 
 	if u.done {
 		return 0, ErrNotFound
+	}
+	if u.deduped {
+		// The content is already cached; there is nothing to receive. Reject the append rather
+		// than silently accepting bytes that would never be verified.
+		return u.Size, ErrSizeExceeded
 	}
 
 	current, err := u.stagingSize()
@@ -331,6 +378,17 @@ func (u *Upload) Commit() (string, bool, error) {
 
 	if u.done {
 		return "", false, ErrNotFound
+	}
+
+	if u.deduped {
+		target := u.store.blobPath(u.Hash)
+		if info, err := os.Stat(target); err == nil && info.Mode().IsRegular() {
+			u.done = true
+			return target, true, nil
+		}
+		// The cache lost the blob between create and commit (a sweep, or a crash). Fail loudly:
+		// the client must re-upload rather than finalize a file that is not there.
+		return "", false, fmt.Errorf("%w: deduped content is no longer cached", ErrNotFound)
 	}
 
 	size, err := u.stagingSize()
@@ -385,6 +443,9 @@ func (u *Upload) discard() error {
 		return ErrNotFound
 	}
 	u.done = true
+	if u.deduped {
+		return nil
+	}
 	return os.Remove(u.path)
 }
 

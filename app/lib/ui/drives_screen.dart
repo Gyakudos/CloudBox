@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../core/agent_client.dart';
 import '../core/models.dart';
 import '../core/pairing_flow.dart';
+import 'send_screen.dart';
 
 /// After pairing: pick which drive on the PC should receive backups.
 ///
-/// The upload itself is the next milestone — this screen proves the pinned connection works
-/// end to end and shows exactly what the PC is offering.
+/// Choosing a drive is not cosmetic — it tells the PC which volume to root the sync folder on,
+/// then hands off to [SendScreen] to pick and transfer files.
 class DrivesScreen extends StatefulWidget {
   const DrivesScreen({super.key, required this.outcome});
 
@@ -20,6 +22,9 @@ class _DrivesScreenState extends State<DrivesScreen> {
   bool _loading = true;
   String? _error;
   List<CloudBoxDrive> _drives = const [];
+
+  /// The volume name currently being resolved into a destination, if any.
+  String? _choosingDrive;
 
   @override
   void initState() {
@@ -55,11 +60,44 @@ class _DrivesScreenState extends State<DrivesScreen> {
   }
 
   void _onDriveSelected(CloudBoxDrive drive) {
+    if (_choosingDrive != null) return;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (context) => _DriveSheet(drive: drive),
+      builder: (sheetContext) => _DriveSheet(
+        drive: drive,
+        onChoose: () {
+          Navigator.of(sheetContext).pop();
+          _chooseDrive(drive);
+        },
+      ),
     );
+  }
+
+  /// Tells the PC to root backups on [drive], then opens the send screen for the folder it
+  /// resolved. The PC answers with the folder it actually created, so the send screen can show
+  /// the real destination rather than assuming one.
+  Future<void> _chooseDrive(CloudBoxDrive drive) async {
+    setState(() => _choosingDrive = drive.name);
+    try {
+      final folder = await widget.outcome.client.setDestination(volume: drive.name);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => SendScreen(outcome: widget.outcome, folder: folder),
+        ),
+      );
+    } on CloudBoxException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
+    } on Object catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not use that drive: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _choosingDrive = null);
+    }
   }
 
   @override
@@ -81,6 +119,10 @@ class _DrivesScreenState extends State<DrivesScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
+            if (_choosingDrive != null) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 12),
+            ],
             _ConnectionCard(outcome: widget.outcome),
             const SizedBox(height: 20),
             Text('Choose a drive', style: Theme.of(context).textTheme.titleMedium),
@@ -130,7 +172,10 @@ class _DrivesScreenState extends State<DrivesScreen> {
       for (final drive in _drives)
         Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: _DriveCard(drive: drive, onTap: () => _onDriveSelected(drive)),
+          child: _DriveCard(
+            drive: drive,
+            onTap: _choosingDrive == null ? () => _onDriveSelected(drive) : null,
+          ),
         ),
     ];
   }
@@ -187,7 +232,7 @@ class _DriveCard extends StatelessWidget {
   const _DriveCard({required this.drive, required this.onTap});
 
   final CloudBoxDrive drive;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   IconData get _icon {
     if (drive.network) return Icons.cloud_outlined;
@@ -261,9 +306,10 @@ class _DriveCard extends StatelessWidget {
 }
 
 class _DriveSheet extends StatelessWidget {
-  const _DriveSheet({required this.drive});
+  const _DriveSheet({required this.drive, required this.onChoose});
 
   final CloudBoxDrive drive;
+  final VoidCallback onChoose;
 
   @override
   Widget build(BuildContext context) {
@@ -280,15 +326,23 @@ class _DriveSheet extends StatelessWidget {
           _DetailRow(label: 'Free', value: formatBytes(drive.freeBytes)),
           _DetailRow(label: 'Total', value: formatBytes(drive.totalBytes)),
           _DetailRow(label: 'Type', value: drive.network ? 'Network' : (drive.removable ? 'Removable' : 'Fixed')),
+          const SizedBox(height: 12),
+          Text(
+            'Backups will be written into the CloudBox folder on this drive. You can change the '
+            'drive at any time; files already sent stay where they are.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Icon(Icons.construction, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text('Choosing a drive and uploading backups arrives in the next update.'),
-              ),
-            ],
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: onChoose,
+              icon: const Icon(Icons.arrow_forward),
+              label: Text('Use ${drive.displayName}'),
+              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+            ),
           ),
         ],
       ),

@@ -6,8 +6,8 @@ PC. No subscription, no third-party storage, nothing leaves home.
 
 | | |
 |---|---|
-| **Version** | `0.01.13.11.26` - scheme in [ADR 0001](docs/decisions/0001-versioning.md) |
-| **Status** | Pre-alpha · M1 transfer core working (resumable upload → verified → atomic finalize) |
+| **Version** | `0.01.15.11.26` - scheme in [ADR 0001](docs/decisions/0001-versioning.md) |
+| **Status** | Pre-release (pre-alpha) · end-to-end upload working (pick files → resumable verified transfer → atomic finalize) |
 | **Android** | Flutter (Dart) + Kotlin platform channels |
 | **PC agent** | Go, single static binary (`CGO_ENABLED=0`) |
 | **Reachability** | LAN, plus optional tailnet via embedded `tsnet` |
@@ -16,7 +16,9 @@ PC. No subscription, no third-party storage, nothing leaves home.
 
 ## Downloads
 
-Tagged releases carry ready-to-install artifacts, built by CI whenever a `v*` tag is pushed:
+Tagged releases carry ready-to-install artifacts, built by CI whenever a `v*` tag is pushed.
+CloudBox is pre-alpha, so every release is published as a **pre-release** — installable and
+dogfoodable, but not yet a stable download:
 
 | Asset | What it is |
 |-------|------------|
@@ -83,8 +85,8 @@ CloudBox/
 │     ├─ pairing/ · identity/ · devices/ · discovery/ · volume/
 │     └─ version/              generated constants
 ├─ app/                        Flutter Android app
-│  ├─ lib/core/                pinned HTTPS client, pairing payload, models
-│  ├─ lib/ui/                  pairing + drive-picker screens
+│  ├─ lib/core/                pinned HTTPS client, pairing payload, models, transfer engine
+│  ├─ lib/ui/                  pairing, drive-picker and send screens
 │  └─ lib/core/gen/            generated version constants (do not edit)
 └─ dist/                       release artifacts (git-ignored, built by CI)
 ```
@@ -94,7 +96,7 @@ CloudBox/
 | Toolchain | Version | Needed for |
 |-----------|---------|------------|
 | Go | ≥ 1.26 | `agent/` |
-| Flutter | ≥ 3.24 (Dart ≥ 3.5) | `app/` |
+| Flutter | ≥ 3.47 (Dart ≥ 3.13) | `app/` — CI pins 3.47.8 |
 | Android SDK | API 35+ | `app/` — Android builds |
 | JDK | 17+ | Android Gradle builds (JDK 21 present here) |
 
@@ -123,8 +125,9 @@ out-of-order appends, uploads a file, commits it into the sync folder, and check
 pwsh eng/smoke.ps1
 ```
 
-**Android app** — Flutter. Pairs over pinned TLS, then lists the PC's drives. Paste the pairing
-code the agent prints (there is no camera scanner yet).
+**Android app** — Flutter. Pairs over pinned TLS, lists the PC's drives, then sends files to the
+drive you pick. Paste the pairing code the agent prints (there is no camera scanner yet), choose
+a drive, pick the files to back up, and watch a resumable, hash-verified transfer land on the PC.
 
 ```sh
 cd app
@@ -153,15 +156,15 @@ opens a console showing a fresh pairing code; the autostart entry launches the a
 
 ## Versioning
 
-`VERSION` holds `MAJOR.MINOR.DD.MM.YY`, e.g. `0.01.13.11.26` = minor 01, released
-**2026-11-13**. Generated artifacts must never be hand-edited:
+`VERSION` holds `MAJOR.MINOR.DD.MM.YY`, e.g. `0.01.15.11.26` = minor 01, released
+**2026-11-15**. Generated artifacts must never be hand-edited:
 
 ```powershell
 pwsh eng/version.ps1          # regenerate after changing VERSION
 pwsh eng/version.ps1 -Check   # verify generated files are current (used in CI)
 ```
 
-Git tags carry a `v` prefix: `v0.01.13.11.26`. See
+Git tags carry a `v` prefix: `v0.01.15.11.26`. See
 [ADR 0001](docs/decisions/0001-versioning.md) for the mapping to Android `versionCode` and the
 Dart `pubspec.yaml` constraint.
 

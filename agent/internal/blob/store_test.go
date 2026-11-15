@@ -329,3 +329,57 @@ func stagingFiles(t *testing.T, store *Store) int {
 	}
 	return len(entries)
 }
+
+func TestDedupedUploadCommitsWithoutReceivingBytes(t *testing.T) {
+	store := newStore(t, DefaultMaxSize)
+	data := content(t, 4096)
+	hash := hashOf(t, data)
+
+	// Seed the cache the way a first transfer would.
+	seed, err := store.CreateUpload(hash, int64(len(data)))
+	if err != nil {
+		t.Fatalf("CreateUpload: %v", err)
+	}
+	if _, err := seed.WriteAt(0, bytes.NewReader(data)); err != nil {
+		t.Fatalf("WriteAt: %v", err)
+	}
+	if _, _, err := seed.Commit(); err != nil {
+		t.Fatalf("seed commit: %v", err)
+	}
+
+	// A second transfer of identical content must not need a staging file or any bytes.
+	deduped, err := store.CreateDedupedUpload(hash, int64(len(data)))
+	if err != nil {
+		t.Fatalf("CreateDedupedUpload: %v", err)
+	}
+	if offset, size := deduped.Progress(); offset != size || size != int64(len(data)) {
+		t.Fatalf("deduped progress = (%d, %d), want (%d, %d)", offset, size, len(data), len(data))
+	}
+	if _, err := deduped.WriteAt(0, bytes.NewReader(data)); !errors.Is(err, ErrSizeExceeded) {
+		t.Fatalf("WriteAt on a deduped upload = %v, want ErrSizeExceeded", err)
+	}
+
+	path, wasDeduped, err := deduped.Commit()
+	if err != nil {
+		t.Fatalf("deduped commit: %v", err)
+	}
+	if !wasDeduped {
+		t.Fatal("commit of cached content did not report deduped")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("cached blob missing after deduped commit: %v", err)
+	}
+	// No staging file should have been created for the deduped upload.
+	if got := stagingFiles(t, store); got != 0 {
+		t.Fatalf("staging files = %d, want 0", got)
+	}
+}
+
+func TestCreateDedupedUploadRequiresCachedContent(t *testing.T) {
+	store := newStore(t, DefaultMaxSize)
+	data := content(t, 64)
+
+	if _, err := store.CreateDedupedUpload(hashOf(t, data), int64(len(data))); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CreateDedupedUpload for uncached content = %v, want ErrNotFound", err)
+	}
+}

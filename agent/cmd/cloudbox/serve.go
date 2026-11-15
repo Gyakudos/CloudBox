@@ -18,6 +18,7 @@ import (
 
 	"github.com/Gyakudos/CloudBox/agent/internal/api"
 	"github.com/Gyakudos/CloudBox/agent/internal/blob"
+	"github.com/Gyakudos/CloudBox/agent/internal/destination"
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
 	"github.com/Gyakudos/CloudBox/agent/internal/discovery"
 	"github.com/Gyakudos/CloudBox/agent/internal/folder"
@@ -63,29 +64,45 @@ func runServe(args []string) int {
 		return 1
 	}
 
-	finalizer, err := folder.New(*syncRoot, safepath.DefaultPolicy())
-	if err != nil {
-		logger.Error("open sync folder", "root", *syncRoot, "err", err)
-		return 1
-	}
 	folders := folder.NewRegistry()
-	if err := folders.Register("default", *syncName, finalizer); err != nil {
-		logger.Error("register sync folder", "err", err)
-		return 1
+	destinations := destination.New(*dir, folders, volume.List, safepath.DefaultPolicy())
+
+	// Precedence: an explicit --sync-root is the operator's decision and always wins; otherwise
+	// a drive the user picked from the phone is restored; otherwise (a first run) the default
+	// root is adopted.
+	var selected folder.Folder
+	if !flagSet(fs, "sync-root") {
+		restored, ok, restoreErr := destinations.Restore()
+		switch {
+		case restoreErr != nil:
+			logger.Warn("could not restore the saved destination; using the default root", "err", restoreErr)
+		case ok:
+			selected = restored
+			logger.Info("restored destination", "root", restored.Root)
+		}
 	}
-	logger.Info("sync folder ready", "id", "default", "root", finalizer.Root)
+	if selected.ID == "" {
+		adopted, err := destinations.Adopt(*syncRoot, *syncName)
+		if err != nil {
+			logger.Error("open sync folder", "root", *syncRoot, "err", err)
+			return 1
+		}
+		selected = adopted
+	}
+	logger.Info("sync folder ready", "id", selected.ID, "root", selected.Root)
 
 	srv := api.New(api.Options{
-		Identity:   ident,
-		Pairing:    pairings,
-		Devices:    devices.NewStore(),
-		Blobs:      blobs,
-		Folders:    folders,
-		Volumes:    volume.List,
-		ServerName: *name,
-		Version:    version.Version,
-		StartedAt:  time.Now(),
-		Logger:     logger,
+		Identity:       ident,
+		Pairing:        pairings,
+		Devices:        devices.NewStore(),
+		Blobs:          blobs,
+		Folders:        folders,
+		Volumes:        volume.List,
+		SetDestination: destinations.Set,
+		ServerName:     *name,
+		Version:        version.Version,
+		StartedAt:      time.Now(),
+		Logger:         logger,
 	})
 
 	token, expires, err := pairings.Issue()
@@ -190,6 +207,18 @@ func printBanner(ident *identity.Identity, name string, port int, expires time.T
 		fmt.Printf("\n%s\n", payload)
 	}
 	fmt.Printf("\nSanity check:\n  curl -k https://127.0.0.1:%d/healthz\n\n", port)
+}
+
+// flagSet reports whether the named flag was given on the command line. An explicitly set
+// --sync-root is an operator decision and takes precedence over a saved destination.
+func flagSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			set = true
+		}
+	})
+	return set
 }
 
 // listenPort extracts the port from a listen address, falling back to the default.

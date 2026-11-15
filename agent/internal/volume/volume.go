@@ -5,7 +5,10 @@
 // (USB, 1.8 TB free)" and warn about FAT32's 4 GB file limit before a long video is attempted.
 package volume
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Volume describes one mountable filesystem.
 type Volume struct {
@@ -27,6 +30,24 @@ type Volume struct {
 	Removable bool `json:"removable"`
 	// Network marks mapped or network-mounted filesystems.
 	Network bool `json:"network"`
+}
+
+// Find returns the volume whose Name matches name. Matching is exact first, then
+// case-insensitive, so Windows drive letters ("e:" and "E:") name the same volume without
+// loosening the comparison for case-sensitive mount points like "/Volumes/Data".
+func Find(vols []Volume, name string) (Volume, bool) {
+	name = strings.TrimSpace(name)
+	for _, v := range vols {
+		if v.Name == name {
+			return v, true
+		}
+	}
+	for _, v := range vols {
+		if strings.EqualFold(v.Name, name) {
+			return v, true
+		}
+	}
+	return Volume{}, false
 }
 
 // sortVolumes gives List a stable, human-sensible order: fixed disks first, then removable,

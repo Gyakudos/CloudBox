@@ -70,6 +70,78 @@ class CloudBoxFolder {
       );
 }
 
+/// A reserved upload, from `POST /v1/uploads`.
+///
+/// When [complete] is true the PC already holds this content, so the PATCH phase is skipped and
+/// the client goes straight to commit; [offset] is then the full size.
+class UploadTicket {
+  const UploadTicket({
+    required this.uploadId,
+    required this.offset,
+    required this.complete,
+  });
+
+  final String uploadId;
+  final int offset;
+  final bool complete;
+
+  factory UploadTicket.fromJson(Map<String, dynamic> json) => UploadTicket(
+        uploadId: json['upload_id'] as String? ?? '',
+        offset: (json['offset'] as num?)?.toInt() ?? 0,
+        complete: json['complete'] as bool? ?? false,
+      );
+}
+
+/// The server's view of an in-flight upload, from `GET /v1/uploads/{id}`.
+class UploadStatus {
+  const UploadStatus({
+    required this.uploadId,
+    required this.offset,
+    required this.size,
+    required this.state,
+  });
+
+  final String uploadId;
+  final int offset;
+  final int size;
+  final String state;
+
+  factory UploadStatus.fromJson(Map<String, dynamic> json) => UploadStatus(
+        uploadId: json['upload_id'] as String? ?? '',
+        offset: (json['offset'] as num?)?.toInt() ?? 0,
+        size: (json['size'] as num?)?.toInt() ?? 0,
+        state: json['state'] as String? ?? '',
+      );
+}
+
+/// The outcome of committing an upload, from `POST /v1/uploads/{id}/commit`.
+class CommitResult {
+  const CommitResult({
+    required this.committed,
+    required this.path,
+    required this.deduped,
+    required this.replaced,
+  });
+
+  final bool committed;
+
+  /// The relative path the file was written to inside the sync folder.
+  final String path;
+
+  /// True when the bytes were already cached and no transfer was needed.
+  final bool deduped;
+
+  /// True when an existing file at [path] was overwritten.
+  final bool replaced;
+
+  factory CommitResult.fromJson(Map<String, dynamic> json) => CommitResult(
+        committed: json['committed'] as bool? ?? false,
+        path: json['path'] as String? ?? '',
+        deduped: json['deduped'] as bool? ?? false,
+        replaced: json['replaced'] as bool? ?? false,
+      );
+}
+
 /// The PC's identity and capabilities, from `GET /v1/system/info`.
 class ServerInfo {
   const ServerInfo({
