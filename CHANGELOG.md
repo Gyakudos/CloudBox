@@ -4,6 +4,16 @@ All notable changes to CloudBox are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses a
 date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md).
 
+## [Unreleased]
+
+### Added
+
+- **The Windows installer can set up the Flutter SDK.** An optional task (checked by default)
+  downloads the pinned Flutter 3.47.8 Windows archive (~1.9 GB), extracts it to
+  `%LOCALAPPDATA%\CloudBox\flutter` and adds its `bin` to the user `PATH`, so the Android app can
+  be built on that PC. The agent itself never needs Flutter — the SDK is a developer convenience,
+  fetched on demand rather than bundled, and removed again on uninstall.
+
 ## [0.01.15.11.26] — 2026-11-15
 
 M1 continues: the drive you pick now decides where your files land, and the phone can send them.

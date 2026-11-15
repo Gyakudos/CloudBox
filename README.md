@@ -22,7 +22,7 @@ dogfoodable, but not yet a stable download:
 
 | Asset | What it is |
 |-------|------------|
-| `cloudbox-setup-<version>.exe` | Windows installer for the PC agent — per-user, optional start-at-sign-in |
+| `cloudbox-setup-<version>.exe` | Windows installer for the PC agent — per-user, optional start-at-sign-in, optional Flutter SDK for building the app |
 | `cloudbox-<version>.apk` | Android app (universal APK; debug-signed until release signing is configured) |
 
 See [Releases](https://github.com/Gyakudos/CloudBox/releases). To build them yourself, see
@@ -148,11 +148,19 @@ Menu entry, and can start the agent at sign-in:
 pwsh eng/build-installer.ps1       # → dist/cloudbox-setup-<version>.exe
 ```
 
-The installer ships **only the agent** — the Flutter toolchain is a build-time dependency for
-the Android app, not something a PC needs at runtime. It writes the agent to
-`%LOCALAPPDATA%\Programs\CloudBox`, registers an optional autostart entry under `HKCU`, and
-offers a firewall rule when run as an administrator. Running **CloudBox** from the Start Menu
-opens a console showing a fresh pairing code; the autostart entry launches the agent hidden.
+The installer writes the agent to `%LOCALAPPDATA%\Programs\CloudBox`, registers an optional
+autostart entry under `HKCU`, and offers a firewall rule when run as an administrator. Running
+**CloudBox** from the Start Menu opens a console showing a fresh pairing code; the autostart
+entry launches the agent hidden.
+
+It also offers an optional **Flutter SDK** task (checked by default): it downloads the pinned
+Flutter 3.47.8 Windows archive (~1.9 GB) from Google's release bucket, extracts it to
+`%LOCALAPPDATA%\CloudBox\flutter`, and adds its `bin` to the user `PATH`, so the Android app can
+be built on that PC. The agent itself never needs Flutter — the SDK is only there for building the
+app, and it is removed again on uninstall. Uncheck the task if you don't want it.
+
+Building the app on that PC still needs Git for Windows, the Android SDK and a JDK 17+; the
+installer sets up only the Flutter SDK.
 
 ## Versioning
 
