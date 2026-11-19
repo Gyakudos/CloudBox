@@ -6,7 +6,7 @@ publish_to: 'none'
 # (0.01.15.11.26) or the leading zero in "01", so the authoritative string lives in
 # lib/core/gen/version.dart and the Android manifest version is overridden in
 # android/app/build.gradle.kts. eng/version.ps1 keeps this line in sync.
-version: 0.1.19+261119
+version: 0.2.19+261119
 
 environment:
   sdk: ^3.13.7

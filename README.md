@@ -22,7 +22,7 @@ dogfoodable, but not yet a stable download:
 
 | Asset | What it is |
 |-------|------------|
-| `cloudbox-setup-<version>.exe` | Windows installer for the PC agent — per-user, optional start-at-sign-in, optional Flutter SDK for building the app |
+| `cloudbox-setup-<version>.exe` | Windows installer for the agent + PC app — per-user, optional desktop shortcuts, start-at-sign-in, and Flutter SDK for building the app |
 | `cloudbox-<version>.apk` | Android app (universal APK; debug-signed until release signing is configured) |
 
 See [Releases](https://github.com/Gyakudos/CloudBox/releases). To build them yourself, see
@@ -163,17 +163,19 @@ flutter build windows            # → build/windows/x64/runner/Release/cloudbox
 
 See `pc/README.md` for how discovery and pinning work.
 
-**Windows installer** — installs the agent per-user (no administrator required), adds a Start
-Menu entry, and can start the agent at sign-in:
+**Windows installer** — installs the agent and the PC companion app per-user (no administrator
+required), adds Start Menu entries, and can add desktop shortcuts and start the agent at sign-in:
 
 ```powershell
 pwsh eng/build-installer.ps1       # → dist/cloudbox-setup-<version>.exe
 ```
 
-The installer writes the agent to `%LOCALAPPDATA%\Programs\CloudBox`, registers an optional
-autostart entry under `HKCU`, and offers a firewall rule when run as an administrator. Running
-**CloudBox** from the Start Menu opens a console showing a fresh pairing code; the autostart
-entry launches the agent hidden.
+The installer writes the agent to `%LOCALAPPDATA%\Programs\CloudBox` and the Flutter app to its
+`pc` subfolder. The optional **desktop shortcuts** task adds **CloudBox** (the desktop app) and
+**CloudBox Agent** (the `serve` console) to the desktop. It also registers an optional autostart
+entry under `HKCU` and offers a firewall rule when run as an administrator. Running **CloudBox**
+from the Start Menu opens the desktop app; **CloudBox Agent** opens a console with a fresh pairing
+code. The autostart entry launches the agent hidden.
 
 It also offers an optional **Flutter SDK** task (checked by default): it downloads the pinned
 Flutter 3.47.8 Windows archive (~1.9 GB) from Google's release bucket, extracts it to

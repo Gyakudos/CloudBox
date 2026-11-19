@@ -10,6 +10,20 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.02.19.11.26] — 2026-11-19
+
+The Windows installer now ships the PC companion app and can place shortcuts for it and the agent
+on the desktop.
+
+### Added
+
+- **Desktop shortcuts** — the optional “Create CloudBox shortcuts on the desktop” installer task
+  adds **CloudBox** (the Flutter desktop app) and **CloudBox Agent** (the `serve` terminal agent)
+  to the desktop. The Start Menu entries remain available.
+- **Bundled PC app** — the installer now includes the Flutter Windows build under
+  `<install dir>\pc`, with its Flutter runtime DLLs and data folder, so one setup `.exe` installs
+  both apps. CI uploads the Windows build from the `pc` job and the installer job reuses it.
+
 ## [0.01.19.11.26] — 2026-11-19
 
 The PC app grows Paired Devices and Backups tabs, both apps can check GitHub for updates,

@@ -4,8 +4,8 @@
     Builds the Windows installer for the CloudBox PC agent.
 
 .DESCRIPTION
-    Cross-compiles the agent for windows/amd64, stamps the build identity, then runs Inno
-    Setup 6 to produce dist/cloudbox-setup-<version>.exe.
+    Builds the Flutter Windows companion and cross-compiles the agent for windows/amd64, stamps the
+    build identity, then runs Inno Setup 6 to produce dist/cloudbox-setup-<version>.exe.
 
     Inno Setup 6 must be installed (https://jrsoftware.org/isdl.php). ISCC.exe is looked up in
     the usual per-user and per-machine locations; override with -Iscc.
@@ -16,6 +16,10 @@
 .PARAMETER SkipAgent
     Reuse an existing agent/dist/cloudbox.exe instead of rebuilding it.
 
+.PARAMETER SkipPc
+    Reuse an existing pc/build/windows/x64/runner/Release instead of rebuilding the Flutter app.
+    CI uses this after downloading the Windows app artifact from the pc job.
+
 .EXAMPLE
     pwsh eng/build-installer.ps1
 
@@ -25,7 +29,8 @@
 [CmdletBinding()]
 param(
     [string]$Iscc,
-    [switch]$SkipAgent
+    [switch]$SkipAgent,
+    [switch]$SkipPc
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +38,28 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $version  = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim()
 $module   = 'github.com/Gyakudos/CloudBox/agent'
+
+# ------------------------------------------------------------------- build the PC companion
+$pcDir = Join-Path $repoRoot 'pc\build\windows\x64\runner\Release'
+$pcExe = Join-Path $pcDir 'cloudbox_pc.exe'
+
+if (-not $SkipPc) {
+    $flutter = (Get-Command flutter -ErrorAction SilentlyContinue).Source
+    if (-not $flutter) {
+        throw "flutter not found on PATH. Add Flutter's bin directory to PATH, or pass -SkipPc to reuse an existing build."
+    }
+    Write-Host 'building Flutter Windows app'
+    Push-Location (Join-Path $repoRoot 'pc')
+    try {
+        & $flutter build windows
+        if ($LASTEXITCODE -ne 0) { throw "flutter build windows failed with exit code $LASTEXITCODE" }
+    } finally {
+        Pop-Location
+    }
+}
+if (-not (Test-Path -LiteralPath $pcExe)) {
+    throw "PC app not found at $pcExe (drop -SkipPc to build it)"
+}
 
 # ------------------------------------------------------------------- locate Inno Setup
 if (-not $Iscc) {

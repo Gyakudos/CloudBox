@@ -110,8 +110,8 @@ jobs:
 
   pc:
     name: app (flutter windows)
-    # Validation only for now: the desktop app is not a release artifact yet. Building it here
-    # keeps the new project from silently rotting (Windows scaffolding and native toolchain).
+    # Builds the companion app that the Windows installer bundles, while also keeping the
+    # Windows Flutter project continuously validated.
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,8 +141,20 @@ jobs:
         working-directory: pc
         run: flutter build windows
 
+      - name: Stage PC app
+        run: |
+          New-Item -ItemType Directory -Force dist\pc | Out-Null
+          Copy-Item pc\build\windows\x64\runner\Release\* dist\pc -Recurse -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudbox-pc
+          path: dist\pc\**
+          if-no-files-found: error
+
   windows-installer:
     name: installer (windows)
+    needs: [pc]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,8 +166,13 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: cloudbox-pc
+          path: pc\build\windows\x64\runner\Release
+
       - name: Build agent + installer
-        run: pwsh -NoProfile -File eng/build-installer.ps1
+        run: pwsh -NoProfile -File eng/build-installer.ps1 -SkipPc
 
       - uses: actions/upload-artifact@v4
         with:

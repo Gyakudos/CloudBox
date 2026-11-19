@@ -9,10 +9,10 @@
 ;
 ;     ISCC.exe /DVersion=0.01.15.11.26 cloudbox.iss
 ;
-; The installer ships the agent, and can optionally set up the Flutter SDK on the PC (the
-; "flutter" task) so the Android app can be built there. The Flutter toolchain is never a runtime
-; dependency of the agent, so it is fetched on demand rather than bundled: the official Windows
-; archive is ~1.9 GB, far larger than the agent itself.
+; The installer ships the agent and the Flutter Windows companion app, and can optionally set up
+; the Flutter SDK on the PC (the "flutter" task) so the Android app can be built there. The Flutter
+; toolchain is never a runtime dependency of the shipped apps, so it is fetched on demand rather
+; than bundled: the official Windows archive is ~1.9 GB, far larger than either app itself.
 
 #ifndef Version
   #define Version "0.0.0"
@@ -24,6 +24,8 @@
 
 #define AppName "CloudBox"
 #define AppExeName "cloudbox.exe"
+#define PcExeName "cloudbox_pc.exe"
+#define PcSourceDir "..\pc\build\windows\x64\runner\Release"
 #define FirewallRule "CloudBox agent"
 
 ; Flutter SDK, installed by the optional "flutter" task. Pinned to the version CI builds the
@@ -59,6 +61,7 @@ MinVersion=10.0
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
+Name: "desktop"; Description: "Create CloudBox shortcuts on the desktop"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 Name: "autostart"; Description: "Start CloudBox automatically when I sign in"; GroupDescription: "Startup:"; Flags: checkedonce
 Name: "firewall"; Description: "Allow phones on my network to reach this PC (Windows Firewall, TCP 8443)"; GroupDescription: "Network:"; Flags: checkedonce; Check: IsAdminInstallMode
 Name: "flutter"; Description: "Also install the Flutter SDK {#FlutterVersion} (~1.9 GB download) to build the Android app on this PC"; GroupDescription: "Developer tools:"; Flags: checkedonce
@@ -66,14 +69,20 @@ Name: "flutter"; Description: "Also install the Flutter SDK {#FlutterVersion} (~
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
 Source: "cloudbox-autostart.vbs"; DestDir: "{app}"; Flags: ignoreversion
+; The Flutter Windows companion and its data/Flutter DLLs live in their own subfolder so they
+; cannot collide with the agent's files.
+Source: "{#PcSourceDir}\*"; DestDir: "{app}\pc"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Dirs]
 ; Parent directory for the Flutter SDK the "flutter" task downloads and extracts.
 Name: "{localappdata}\CloudBox"; Tasks: flutter
 
 [Icons]
-Name: "{group}\CloudBox"; Filename: "{app}\{#AppExeName}"; Parameters: "serve"; WorkingDir: "{app}"; Comment: "Start the agent and show a pairing code"
+Name: "{group}\CloudBox"; Filename: "{app}\pc\{#PcExeName}"; WorkingDir: "{app}\pc"; IconFilename: "{app}\pc\{#PcExeName}"; Comment: "Open the CloudBox desktop app"
+Name: "{group}\CloudBox Agent"; Filename: "{app}\{#AppExeName}"; Parameters: "serve"; WorkingDir: "{app}"; IconFilename: "{app}\pc\{#PcExeName}"; Comment: "Start the agent and show a pairing code"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\pc\{#PcExeName}"; WorkingDir: "{app}\pc"; IconFilename: "{app}\pc\{#PcExeName}"; Comment: "Open the CloudBox desktop app"; Tasks: desktop
+Name: "{autodesktop}\{#AppName} Agent"; Filename: "{app}\{#AppExeName}"; Parameters: "serve"; WorkingDir: "{app}"; IconFilename: "{app}\pc\{#PcExeName}"; Comment: "Start the agent and show a pairing code"; Tasks: desktop
 
 [Registry]
 ; Per-user autostart. HKCU is correct even for an all-users install: the agent runs as the
