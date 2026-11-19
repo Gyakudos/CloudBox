@@ -201,7 +201,11 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          # Only the two published artifacts. The intermediate cloudbox-pc artifact also lands
+          # in dist/ (merged from the Windows job) and must not leak its loose DLLs/EXE here.
+          files: |
+            dist/cloudbox-*.apk
+            dist/cloudbox-setup-*.exe
           generate_release_notes: true
           # CloudBox is pre-alpha: every tagged build is a pre-release, and none of them should
           # be presented as the stable "Latest" download.
