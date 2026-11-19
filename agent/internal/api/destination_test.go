@@ -86,6 +86,62 @@ func TestSetDestinationReturnsTheChosenFolder(t *testing.T) {
 	}
 }
 
+func TestSetDestinationUsesTheCallingDeviceBackupFolder(t *testing.T) {
+	ident, err := identity.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	store := devices.NewStore()
+	device, token, err := store.Create("Phone", "android", "test")
+	if err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	_, err = store.SetBackupConfig(device.ID, devices.BackupConfig{
+		FolderID:  "backup-" + device.ID,
+		Volume:    "C:",
+		Subfolder: "CloudBox/Phone",
+		Root:      `C:\CloudBox\Phone`,
+		Enabled:   true,
+	})
+	if err != nil {
+		t.Fatalf("set backup config: %v", err)
+	}
+
+	srv := api.New(api.Options{
+		Identity: ident,
+		Pairing:  pairing.NewManager(time.Minute),
+		Devices:  store,
+		SetDestination: func(string, string) (folder.Folder, error) {
+			t.Fatal("the global destination must not change for a paired phone")
+			return folder.Folder{}, nil
+		},
+		SetDeviceBackup: func(id, vol, sub string, enabled bool) (devices.Device, folder.Folder, error) {
+			if id != device.ID || vol != "E:" || sub != "Phone" || !enabled {
+				t.Fatalf("device backup setter got (%q, %q, %q, %v)", id, vol, sub, enabled)
+			}
+			return device, folder.Folder{ID: "backup-" + id, Name: sub, Root: `E:\Phone`}, nil
+		},
+		ServerName: "TEST-PC",
+		Version:    "test-version",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	h := &destinationHarness{handler: srv.Handler(), token: token}
+
+	rec := h.put(map[string]string{"volume": "E:", "subfolder": "Phone"}, token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Folder folder.Folder `json:"folder"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Folder.ID != "backup-"+device.ID {
+		t.Fatalf("folder id = %q, want per-device folder", body.Folder.ID)
+	}
+}
+
 func TestSetDestinationMapsErrorsToStatus(t *testing.T) {
 	cases := []struct {
 		name     string

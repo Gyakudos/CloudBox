@@ -36,7 +36,13 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := s.opts.Folders.Get(req.FolderID); !ok {
+	// A device with a configured backup is pinned to its own folder: the phone cannot name a
+	// different folder_id and write into another phone's tree (or the global default).
+	folderID := req.FolderID
+	if device, ok := deviceFrom(r.Context()); ok && device.Backup.Enabled && device.Backup.FolderID != "" {
+		folderID = device.Backup.FolderID
+	}
+	if _, ok := s.opts.Folders.Get(folderID); !ok {
 		writeError(w, http.StatusNotFound, "FOLDER_NOT_FOUND", "no such folder_id")
 		return
 	}
@@ -46,7 +52,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 	// deduped upload that commit is a metadata-only copy out of the cache.
 	if s.opts.Blobs.Has(req.Hash) {
 		if upload, err := s.opts.Blobs.CreateDedupedUpload(req.Hash, req.Size); err == nil {
-			upload.FolderID = req.FolderID
+			upload.FolderID = folderID
 			writeJSON(w, http.StatusCreated, createUploadResponse{
 				UploadID: upload.ID,
 				Offset:   upload.Size,
@@ -71,7 +77,7 @@ func (s *Server) handleCreateUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upload.FolderID = req.FolderID
+	upload.FolderID = folderID
 
 	writeJSON(w, http.StatusCreated, createUploadResponse{UploadID: upload.ID, Offset: 0})
 }

@@ -65,6 +65,14 @@ func runServe(args []string) int {
 	folders := folder.NewRegistry()
 	destinations := destination.New(*dir, folders, volume.List, safepath.DefaultPolicy())
 
+	// Paired phones and their per-device backup folders survive restarts. A corrupt registry is
+	// fatal: silently starting empty would leave phones paired on one side only.
+	deviceStore, err := devices.NewStoreAt(*dir)
+	if err != nil {
+		logger.Error("load devices", "err", err)
+		return 1
+	}
+
 	// Precedence: an explicit --sync-root is the operator's decision and always wins; otherwise
 	// a drive the user picked from the phone is restored; otherwise (a first run) the default
 	// root is adopted.
@@ -89,6 +97,24 @@ func runServe(args []string) int {
 	}
 	logger.Info("sync folder ready", "id", selected.ID, "root", selected.Root)
 
+	// Re-adopt every persisted device backup root. A drive that has been unplugged (or a folder
+	// the user removed) is logged and skipped; one missing phone must not stop the agent.
+	for _, dev := range deviceStore.List() {
+		cfg := dev.Backup
+		if cfg.FolderID == "" || cfg.Root == "" {
+			continue
+		}
+		if info, err := os.Stat(cfg.Root); err != nil || !info.IsDir() {
+			logger.Warn("device backup folder is unavailable; skipping",
+				"device_id", dev.ID, "root", cfg.Root, "err", err)
+			continue
+		}
+		if _, err := registerBackupFolder(folders, cfg); err != nil {
+			logger.Warn("could not register device backup folder; skipping",
+				"device_id", dev.ID, "root", cfg.Root, "err", err)
+		}
+	}
+
 	port := listenPort(*addr)
 	session := newPairingSession(*dir, *name, ident, pairings, port, logger)
 	snap, err := session.issue()
@@ -100,7 +126,7 @@ func runServe(args []string) int {
 	srv := api.New(api.Options{
 		Identity:       ident,
 		Pairing:        pairings,
-		Devices:        devices.NewStore(),
+		Devices:        deviceStore,
 		Blobs:          blobs,
 		Folders:        folders,
 		Volumes:        volume.List,
@@ -109,10 +135,47 @@ func runServe(args []string) int {
 		// token, over routes guarded to loopback connections (see api/local.go).
 		LocalState:   func() api.LocalState { return session.state(destinations) },
 		LocalRefresh: func() (api.LocalState, error) { return session.refresh(destinations) },
-		ServerName:   *name,
-		Version:      version.Version,
-		StartedAt:    time.Now(),
-		Logger:       logger,
+		ListDevices:  func() []devices.Device { return deviceStore.List() },
+		RevokeDevice: func(id string) error {
+			_, err := deviceStore.RevokeWithError(id)
+			return err
+		},
+		SetDeviceBackup: func(id, vol, sub string, enabled bool) (devices.Device, folder.Folder, error) {
+			device, err := deviceStore.UpdateBackup(id, vol, sub, enabled)
+			if err != nil {
+				return devices.Device{}, folder.Folder{}, err
+			}
+			selected, err := registerBackupFolder(folders, device.Backup)
+			if err != nil {
+				return device, folder.Folder{}, err
+			}
+			return device, selected, nil
+		},
+		ListBackups: func() []api.BackupInfo { return deviceBackups(deviceStore) },
+		// A new phone inherits the current global destination but gets its own folder id and
+		// root config, so changing the global choice later cannot silently redirect its backup.
+		OnPaired: func(device devices.Device) error {
+			choice, ok := destinations.CurrentChoice()
+			if !ok {
+				return nil
+			}
+			cfg := devices.BackupConfig{
+				FolderID:  devices.BackupFolderID(device.ID),
+				Volume:    choice.Volume,
+				Subfolder: choice.Subfolder,
+				Root:      choice.Root,
+				Enabled:   true,
+			}
+			if _, err := registerBackupFolder(folders, cfg); err != nil {
+				return err
+			}
+			_, err := deviceStore.SetBackupConfig(device.ID, cfg)
+			return err
+		},
+		ServerName: *name,
+		Version:    version.Version,
+		StartedAt:  time.Now(),
+		Logger:     logger,
 	})
 
 	printBanner(ident, *name, *addr, port, snap.expires, *pairTTL, snap.qrPath, snap.qrWritten, snap.payload)
@@ -160,6 +223,54 @@ func runServe(args []string) int {
 	}
 	logger.Info("shutdown complete")
 	return 0
+}
+
+// registerBackupFolder adopts a resolved per-device backup root into the folder registry, so an
+// upload addressed to that folder id lands in the phone's own tree.
+func registerBackupFolder(folders *folder.Registry, cfg devices.BackupConfig) (folder.Folder, error) {
+	finalizer, err := folder.New(cfg.Root, safepath.DefaultPolicy())
+	if err != nil {
+		return folder.Folder{}, err
+	}
+	name := cfg.Subfolder
+	if name == "" {
+		name = destination.DefaultSubfolder
+	}
+	selected := folder.Folder{ID: cfg.FolderID, Name: name, Root: finalizer.Root}
+	if err := folders.Register(cfg.FolderID, name, finalizer); err != nil {
+		return folder.Folder{}, err
+	}
+	return selected, nil
+}
+
+// deviceBackups builds the PC app's paired-device rows, including whether each backup root is
+// still reachable. Volume names are matched against a fresh enumeration, not trusted from disk.
+func deviceBackups(store *devices.Store) []api.BackupInfo {
+	devicesList := store.List()
+	out := make([]api.BackupInfo, 0, len(devicesList))
+	vols, volErr := volume.List()
+	for _, device := range devicesList {
+		cfg := device.Backup
+		info := api.BackupInfo{
+			DeviceID:   device.ID,
+			DeviceName: device.Name,
+			FolderID:   cfg.FolderID,
+			Volume:     cfg.Volume,
+			Subfolder:  cfg.Subfolder,
+			Root:       cfg.Root,
+			Enabled:    cfg.Enabled,
+			LastSeenAt: device.LastSeenAt,
+		}
+		if stat, err := os.Stat(cfg.Root); cfg.Root != "" && err == nil && stat.IsDir() {
+			info.Available = true
+			if cfg.Volume != "" && volErr == nil {
+				_, found := volume.Find(vols, cfg.Volume)
+				info.Available = found
+			}
+		}
+		out = append(out, info)
+	}
+	return out
 }
 
 func printBanner(ident *identity.Identity, name, addr string, port int, expires time.Time, ttl time.Duration, qrPath string, qrWritten bool, payload []byte) {

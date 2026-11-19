@@ -1,8 +1,10 @@
 # CloudBox PC
 
-The Flutter Windows companion app for CloudBox. It shows the agent's live pairing code/QR and
-lets you choose which drive receives your phone's backups — the PC-side setup flow that used to
-live only in the agent's terminal banner.
+The Flutter Windows companion app for CloudBox. It has four tabs: live pairing code/QR, the
+default backup drive, **Paired Devices** (add/remove phones and configure a folder per phone), and
+**Backups** (where each phone currently writes). Its header **Update** button checks GitHub
+Releases for a newer build. This is the PC-side setup flow that used to live only in the agent's
+terminal banner.
 
 ## How it finds the agent
 

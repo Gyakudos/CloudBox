@@ -333,6 +333,135 @@ func TestUploadDedupeSkipsTransfer(t *testing.T) {
 	}
 }
 
+func TestTwoDevicesUseSeparateBackupRoots(t *testing.T) {
+	ident, err := identity.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	store, err := blob.Open(t.TempDir(), blob.DefaultMaxSize)
+	if err != nil {
+		t.Fatalf("blob.Open: %v", err)
+	}
+
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	sharedRoot := t.TempDir()
+	folders := folder.NewRegistry()
+	register := func(id, root string) {
+		t.Helper()
+		finalizer, err := folder.New(root, safepath.DefaultPolicy())
+		if err != nil {
+			t.Fatalf("folder.New(%s): %v", root, err)
+		}
+		if err := folders.Register(id, id, finalizer); err != nil {
+			t.Fatalf("register %s: %v", id, err)
+		}
+	}
+	register("shared", sharedRoot)
+
+	deviceStore := devices.NewStore()
+	first, tokenA, err := deviceStore.Create("Pixel", "android", "v")
+	if err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second, tokenB, err := deviceStore.Create("iPhone", "ios", "v")
+	if err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+	if _, err := deviceStore.SetBackupConfig(first.ID, devices.BackupConfig{
+		FolderID: devices.BackupFolderID(first.ID), Root: rootA, Enabled: true,
+	}); err != nil {
+		t.Fatalf("backup for first: %v", err)
+	}
+	if _, err := deviceStore.SetBackupConfig(second.ID, devices.BackupConfig{
+		FolderID: devices.BackupFolderID(second.ID), Root: rootB, Enabled: true,
+	}); err != nil {
+		t.Fatalf("backup for second: %v", err)
+	}
+	register(devices.BackupFolderID(first.ID), rootA)
+	register(devices.BackupFolderID(second.ID), rootB)
+
+	handler := api.New(api.Options{
+		Identity:   ident,
+		Pairing:    pairing.NewManager(time.Minute),
+		Devices:    deviceStore,
+		Blobs:      store,
+		Folders:    folders,
+		Volumes:    func() ([]volume.Volume, error) { return nil, nil },
+		ServerName: "TEST-PC",
+		Version:    "test-version",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}).Handler()
+
+	request := func(method, path string, body any, token string) *httptest.ResponseRecorder {
+		t.Helper()
+		var reader io.Reader
+		if body != nil {
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			reader = bytes.NewReader(raw)
+		}
+		req := httptest.NewRequest(method, path, reader)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	upload := func(token string, data []byte, relPath string) {
+		t.Helper()
+		hash := hashBytes(t, data)
+		// Both phones claim the same folder_id; the per-device backup config must win.
+		rec := request(http.MethodPost, "/v1/uploads", map[string]any{
+			"hash": hash, "size": len(data), "folder_id": "shared",
+		}, token)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("create: status = %d body %s", rec.Code, rec.Body.String())
+		}
+		var created createResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+			t.Fatalf("decode create: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodPatch, "/v1/uploads/"+created.UploadID, bytes.NewReader(data))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Range", fmt.Sprintf("bytes 0-%d/%d", len(data)-1, len(data)))
+		rec = httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("patch: status = %d body %s", rec.Code, rec.Body.String())
+		}
+
+		rec = request(http.MethodPost, "/v1/uploads/"+created.UploadID+"/commit", map[string]any{
+			"hash": hash, "path": relPath,
+		}, token)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("commit: status = %d body %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	upload(tokenA, []byte("pixel photo bytes"), "DCIM/pixel.jpg")
+	upload(tokenB, []byte("iphone photo bytes"), "DCIM/iphone.jpg")
+
+	if got, err := os.ReadFile(filepath.Join(rootA, "DCIM", "pixel.jpg")); err != nil || string(got) != "pixel photo bytes" {
+		t.Fatalf("first phone's file: %q err=%v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(rootB, "DCIM", "iphone.jpg")); err != nil || string(got) != "iphone photo bytes" {
+		t.Fatalf("second phone's file: %q err=%v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(rootA, "DCIM", "iphone.jpg")); !os.IsNotExist(err) {
+		t.Fatal("second phone's file landed in the first phone's root")
+	}
+	if _, err := os.Stat(filepath.Join(rootB, "DCIM", "pixel.jpg")); !os.IsNotExist(err) {
+		t.Fatal("first phone's file landed in the second phone's root")
+	}
+	if entries, err := os.ReadDir(sharedRoot); err != nil || len(entries) != 0 {
+		t.Fatalf("the shared fallback folder received files: %v err=%v", entries, err)
+	}
+}
+
 func TestUploadRequiresAuth(t *testing.T) {
 	h := newUploadHarness(t)
 	h.token = ""

@@ -48,6 +48,16 @@ type Options struct {
 	LocalState   func() LocalState
 	LocalRefresh func() (LocalState, error)
 
+	// The device-management callbacks back the /local/devices and /local/backups routes. They
+	// are supplied by serve.go, which owns the persisted device store and folder registry.
+	ListDevices     func() []devices.Device
+	RevokeDevice    func(id string) error
+	SetDeviceBackup func(id, volumeName, subfolder string, enabled bool) (devices.Device, folder.Folder, error)
+	ListBackups     func() []BackupInfo
+	// OnPaired initialises a newly paired device with its own backup folder, inheriting the
+	// current global destination. Failure is logged but does not undo the pairing.
+	OnPaired func(device devices.Device) error
+
 	ServerName string
 	Version    string
 	StartedAt  time.Time
@@ -103,6 +113,10 @@ func (s *Server) Handler() http.Handler {
 		if s.opts.SetDestination != nil {
 			local.HandleFunc("PUT /destination", s.handleLocalSetDestination)
 		}
+		local.HandleFunc("GET /devices", s.handleLocalListDevices)
+		local.HandleFunc("DELETE /devices/{id}", s.handleLocalRevokeDevice)
+		local.HandleFunc("PUT /devices/{id}/backup", s.handleLocalSetBackup)
+		local.HandleFunc("GET /backups", s.handleLocalListBackups)
 		mux.Handle("/local/", s.requireLoopback(http.StripPrefix("/local", local)))
 	}
 
@@ -124,6 +138,12 @@ func (s *Server) requireDevice(next http.Handler) http.Handler {
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unknown device token")
 			return
+		}
+		// Last-seen is what the PC app shows for each paired phone. Touch is a best-effort
+		// persistence write, so a full disk never turns a valid request into an error.
+		s.opts.Devices.Touch(device.ID)
+		if fresh, ok := s.opts.Devices.Get(device.ID); ok {
+			device = fresh
 		}
 		ctx := context.WithValue(r.Context(), deviceContextKey{}, device)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -249,6 +269,15 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Give the new phone its own backup folder before it can start uploading. The pairing token
+	// is already burned and the device registered, so a configuration failure here is logged
+	// rather than reported: failing the request would strand a paired device with no token.
+	if s.opts.OnPaired != nil {
+		if err := s.opts.OnPaired(device); err != nil {
+			s.opts.Logger.Error("initialize device backup", "err", err, "device_id", device.ID)
+		}
+	}
+
 	s.opts.Logger.Info("device paired", "device_id", device.ID, "name", device.Name, "platform", device.Platform)
 
 	writeJSON(w, http.StatusCreated, pairResponse{
@@ -279,6 +308,24 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 	folders := []folder.Folder{}
 	if s.opts.Folders != nil {
 		folders = s.opts.Folders.List()
+	}
+	// A phone with a configured backup also sees that folder id, even in tests or after a
+	// reload where the registry may not have been rebuilt yet.
+	if device.Backup.Enabled && device.Backup.FolderID != "" {
+		known := false
+		for _, f := range folders {
+			if f.ID == device.Backup.FolderID {
+				known = true
+				break
+			}
+		}
+		if !known {
+			folders = append(folders, folder.Folder{
+				ID:   device.Backup.FolderID,
+				Name: device.Backup.Subfolder,
+				Root: device.Backup.Root,
+			})
+		}
 	}
 
 	writeJSON(w, http.StatusOK, infoResponse{

@@ -430,9 +430,23 @@ separate, deliberately smaller surface to show the pairing code and set the back
 | Route | Purpose |
 |-------|---------|
 | `GET /local/status` | Current code, expiry, whether it is still unredeemed, pin, endpoints, chosen destination, QR bytes. |
-| `POST /local/pairing/refresh` | Burn the displayed code and issue a fresh one; returns the same envelope. |
+| `POST /local/pairing/refresh` | Issue a fresh code for adding another device; returns the same envelope. |
 | `GET /local/volumes` | Same drive list the phone sees (`{volumes:[…]}`). |
 | `PUT /local/destination` | Same `{volume, subfolder}` choice as `/v1/system/destination`. |
+| `GET /local/devices` | Paired phones (`{devices:[…]}`), newest first; each carries its backup config. |
+| `DELETE /local/devices/{id}` | Revoke a paired phone and invalidate its token (`{deleted:true}`; `404 DEVICE_NOT_FOUND` if unknown). |
+| `PUT /local/devices/{id}/backup` | `{volume, subfolder, enabled}` → `{device, folder}`; resolve and persist that phone's backup folder. |
+| `GET /local/backups` | Per-device backup rows (`{backups:[…]}`: device id/name, folder id, volume, subfolder, root, `available`, `enabled`, `last_seen_at`). |
+
+Paired devices and their backup folders are stored in `<data dir>/devices.json` (token digests
+only). Every new phone inherits the current global destination at pairing time but gets its own
+folder id, `backup-<device_id>`, and its own root config; it is pinned to that folder for uploads
+regardless of the `folder_id` it sends. `PUT /local/devices/{id}/backup` repoints one phone using
+the same volume/subfolder validation as the phone's destination endpoint. A backup root whose
+drive is unplugged is reported `available:false` and skipped at startup rather than aborting it.
+For a phone that already has a per-device folder, `PUT /v1/system/destination` (the drive picker in
+the Android app) repoints **that device's** folder too; it no longer silently changes only the
+global default. Only the PC's `PUT /local/destination` changes the global fallback.
 
 Rules:
 

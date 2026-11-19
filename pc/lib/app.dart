@@ -6,8 +6,11 @@ import 'core/config.dart';
 import 'core/gen/version.dart';
 import 'core/local_api.dart';
 import 'core/models.dart';
+import 'features/backups/backups_screen.dart';
+import 'features/devices/paired_devices_screen.dart';
 import 'features/pairing/pairing_screen.dart';
 import 'features/storage/storage_screen.dart';
+import 'ui/update_button.dart';
 
 class CloudBoxPcApp extends StatelessWidget {
   const CloudBoxPcApp({super.key});
@@ -36,6 +39,7 @@ class CloudBoxHome extends StatefulWidget {
 class _CloudBoxHomeState extends State<CloudBoxHome> {
   LocalAgentApi? _api;
   LocalState? _state;
+  List<VolumeInfo> _volumes = const [];
   String? _configError;
   String? _pollError;
   bool _initializing = true;
@@ -62,7 +66,7 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
     try {
       final config = readAgentConfig();
       _api = PinnedLocalAgentApi(config);
-      await _poll();
+      await Future.wait([_poll(), _loadVolumes()]);
     } on ConfigException catch (error) {
       if (mounted) setState(() => _configError = error.message);
     } finally {
@@ -88,6 +92,48 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
       setState(() => _pollError = error.message);
     } finally {
       _polling = false;
+    }
+  }
+
+  /// Volumes only change when the user swaps a drive, so load them once per connection rather
+  /// than on every three-second status poll.
+  Future<void> _loadVolumes() async {
+    final api = _api;
+    if (api == null) return;
+    try {
+      final volumes = await api.volumes();
+      if (!mounted) return;
+      setState(() => _volumes = volumes);
+    } on Object {
+      // The status poll shows connectivity problems; keep whatever drive list we last had.
+    }
+  }
+
+  /// Mint a fresh code and switch to the Pairing tab so a second phone can be added.
+  Future<void> _addDevice() async {
+    final api = _api;
+    if (api == null) {
+      setState(() {
+        _initializing = true;
+        _selected = 0;
+      });
+      await _connect();
+      return;
+    }
+    setState(() => _refreshing = true);
+    try {
+      final state = await api.refreshPairing();
+      if (!mounted) return;
+      setState(() {
+        _state = state;
+        _pollError = null;
+        _selected = 0;
+      });
+    } on CloudBoxException catch (error) {
+      if (!mounted) return;
+      setState(() => _pollError = error.message);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -137,6 +183,8 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
             destinations: const [
               NavigationRailDestination(icon: Icon(Icons.qr_code_2_outlined), selectedIcon: Icon(Icons.qr_code_2), label: Text('Pairing')),
               NavigationRailDestination(icon: Icon(Icons.storage_outlined), selectedIcon: Icon(Icons.storage), label: Text('Storage')),
+              NavigationRailDestination(icon: Icon(Icons.devices_other_outlined), selectedIcon: Icon(Icons.devices_other), label: Text('Paired Devices')),
+              NavigationRailDestination(icon: Icon(Icons.backup_outlined), selectedIcon: Icon(Icons.backup), label: Text('Backups')),
             ],
           ),
           const VerticalDivider(width: 1),
@@ -153,6 +201,8 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
                         Text('CloudBox PC', style: theme.textTheme.titleMedium),
                         const SizedBox(width: 16),
                         _ConnectionChip(error: _configError ?? _pollError),
+                        const Spacer(),
+                        const UpdateButton(platform: 'windows'),
                       ],
                     ),
                   ),
@@ -196,19 +246,32 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
       );
     }
 
-    if (_selected == 0) {
-      return PairingScreen(
-        state: _state,
-        error: _pollError,
-        refreshing: _refreshing,
-        onRefresh: _retry,
-      );
+    switch (_selected) {
+      case 0:
+        return PairingScreen(
+          state: _state,
+          error: _pollError,
+          refreshing: _refreshing,
+          onRefresh: _retry,
+        );
+      case 1:
+        return StorageScreen(
+          api: api,
+          current: _state?.destination,
+          onChanged: _poll,
+        );
+      case 2:
+        return PairedDevicesScreen(
+          api: api,
+          volumes: _volumes,
+          onAddDevice: _addDevice,
+        );
+      default:
+        return BackupsScreen(
+          api: api,
+          onConfigure: (_) => setState(() => _selected = 2),
+        );
     }
-    return StorageScreen(
-      api: api,
-      current: _state?.destination,
-      onChanged: _poll,
-    );
   }
 }
 

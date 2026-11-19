@@ -85,46 +85,77 @@ func (m *Manager) Adopt(root, name string) (folder.Folder, error) {
 	return selected, nil
 }
 
-// Set resolves volumeName and subfolder to a sync root, points the default folder at it, and
-// persists the choice. An empty subfolder falls back to DefaultSubfolder.
-func (m *Manager) Set(volumeName, subfolder string) (folder.Folder, error) {
-	vols, err := m.volumes()
+// Resolve applies the destination validation rules to volumeName and subfolder without touching
+// any manager state: the volume must come from the supplied enumeration and the subfolder must
+// be a safe relative path. It is shared with per-device backup configs so the two paths cannot
+// drift apart.
+func Resolve(volumes func() ([]volume.Volume, error), policy safepath.Policy, volumeName, subfolder string) (Destination, error) {
+	vols, err := volumes()
 	if err != nil {
-		return folder.Folder{}, fmt.Errorf("destination: enumerate volumes: %w", err)
+		return Destination{}, fmt.Errorf("destination: enumerate volumes: %w", err)
 	}
 
 	vol, ok := volume.Find(vols, volumeName)
 	if !ok {
-		return folder.Folder{}, fmt.Errorf("%w: %q", ErrUnknownVolume, volumeName)
+		return Destination{}, fmt.Errorf("%w: %q", ErrUnknownVolume, volumeName)
 	}
 
 	if strings.TrimSpace(subfolder) == "" {
 		subfolder = DefaultSubfolder
 	}
-	clean, err := safepath.Clean(subfolder, m.policy)
+	clean, err := safepath.Clean(subfolder, policy)
 	if err != nil {
-		return folder.Folder{}, fmt.Errorf("%w: %v", ErrInvalidSubfolder, err)
+		return Destination{}, fmt.Errorf("%w: %v", ErrInvalidSubfolder, err)
 	}
 
 	root := filepath.Join(vol.Path, filepath.FromSlash(clean))
-	finalizer, err := folder.New(root, m.policy)
+	finalizer, err := folder.New(root, policy)
 	if err != nil {
-		return folder.Folder{}, err
+		return Destination{}, err
+	}
+	return Destination{Volume: vol.Name, Subfolder: clean, Root: finalizer.Root}, nil
+}
+
+// Set resolves volumeName and subfolder to a sync root, points the default folder at it, and
+// persists the choice. An empty subfolder falls back to DefaultSubfolder.
+func (m *Manager) Set(volumeName, subfolder string) (folder.Folder, error) {
+	selected, _, err := m.SetForID(DefaultID, volumeName, subfolder)
+	return selected, err
+}
+
+// SetForID resolves and registers folderID. Non-default IDs are per-device backup folders: they
+// get a folder in the registry but do not disturb the global choice or destination.json, which
+// keeps describing the phone's drive picker selection alone.
+func (m *Manager) SetForID(folderID, volumeName, subfolder string) (folder.Folder, Destination, error) {
+	dest, err := Resolve(m.volumes, m.policy, volumeName, subfolder)
+	if err != nil {
+		return folder.Folder{}, Destination{}, err
 	}
 
-	selected := folder.Folder{ID: DefaultID, Name: clean, Root: finalizer.Root}
-	if err := m.folders.Register(DefaultID, clean, finalizer); err != nil {
-		return folder.Folder{}, err
+	finalizer, err := folder.New(dest.Root, m.policy)
+	if err != nil {
+		return folder.Folder{}, Destination{}, err
 	}
-	dest := Destination{Volume: vol.Name, Subfolder: clean, Root: finalizer.Root}
+	name := dest.Subfolder
+	if name == "" {
+		name = DefaultSubfolder
+	}
+	selected := folder.Folder{ID: folderID, Name: name, Root: finalizer.Root}
+	if err := m.folders.Register(folderID, name, finalizer); err != nil {
+		return folder.Folder{}, Destination{}, err
+	}
+
+	if folderID != DefaultID {
+		return selected, dest, nil
+	}
 	m.record(selected, dest)
 
 	// Persist after the registry is live: a failed write should not leave the phone pointing at
 	// a folder the agent has not actually adopted.
 	if err := save(m.dir, dest); err != nil {
-		return selected, err
+		return selected, dest, err
 	}
-	return selected, nil
+	return selected, dest, nil
 }
 
 // Restore loads a persisted choice and registers it. The bool reports whether one was found.

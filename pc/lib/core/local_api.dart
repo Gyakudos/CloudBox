@@ -33,6 +33,17 @@ abstract class LocalAgentApi {
     required String subfolder,
   });
 
+  /// Devices known to the agent, newest first.
+  Future<List<PairedDevice>> devices();
+  Future<void> revokeDevice(String id);
+  Future<PairedDevice> setDeviceBackup({
+    required String id,
+    required String volume,
+    required String subfolder,
+    required bool enabled,
+  });
+  Future<List<BackupStatus>> backups();
+
   void close();
 }
 
@@ -95,6 +106,54 @@ class PinnedLocalAgentApi implements LocalAgentApi {
       throw const CloudBoxException('The agent did not confirm the destination.');
     }
     return SelectedFolder.fromJson(folder.cast<String, dynamic>());
+  }
+
+  @override
+  Future<List<PairedDevice>> devices() async {
+    final json = await _request('GET', '/local/devices');
+    final list = json['devices'] as List? ?? const [];
+    return list
+        .whereType<Map>()
+        .map((item) => PairedDevice.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<void> revokeDevice(String id) async {
+    await _request('DELETE', '/local/devices/${Uri.encodeComponent(id)}');
+  }
+
+  @override
+  Future<PairedDevice> setDeviceBackup({
+    required String id,
+    required String volume,
+    required String subfolder,
+    required bool enabled,
+  }) async {
+    final json = await _request(
+      'PUT',
+      '/local/devices/${Uri.encodeComponent(id)}/backup',
+      body: {
+        'volume': volume,
+        'subfolder': subfolder,
+        'enabled': enabled,
+      },
+    );
+    final device = json['device'];
+    if (device is! Map) {
+      throw const CloudBoxException('The agent did not confirm the device backup settings.');
+    }
+    return PairedDevice.fromJson(device.cast<String, dynamic>());
+  }
+
+  @override
+  Future<List<BackupStatus>> backups() async {
+    final json = await _request('GET', '/local/backups');
+    final list = json['backups'] as List? ?? const [];
+    return list
+        .whereType<Map>()
+        .map((item) => BackupStatus.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
   }
 
   @override

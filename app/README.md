@@ -57,9 +57,12 @@ lib/
 │  ├─ hashing.dart          streaming BLAKE3-256 (the protocol's content ID)
 │  ├─ models.dart           wire models: volumes, tickets, status, commit results
 │  ├─ pinning.dart          SPKI pin extraction and verification
-│  └─ pairing_payload.dart  parse/validate the agent's pairing code
+│  ├─ pairing_payload.dart  parse/validate the agent's pairing code
+│  └─ update_checker.dart   check GitHub Releases for a newer pre-release build
 └─ ui/
-   ├─ pair_screen.dart      paste the pairing code, pair over pinned TLS
+   ├─ pair_screen.dart      scan a QR or paste the pairing code, pair over pinned TLS
+   ├─ qr_scan_screen.dart   camera scanner using mobile_scanner
+   ├─ update_button.dart    header Update button and release dialog
    ├─ drives_screen.dart    list drives; "Use this drive" sets the destination
    └─ send_screen.dart      pick files and watch the upload progress
 ```

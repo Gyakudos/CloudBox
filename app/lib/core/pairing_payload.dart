@@ -74,4 +74,16 @@ class PairingPayload {
       token: token,
     );
   }
+
+  /// Serializes back to the compact JSON form understood by [parse].
+  ///
+  /// Used when a scanned QR code fills the pairing-code field, so the existing paste/connect
+  /// flow can validate and consume exactly the same payload.
+  String toJson() => jsonEncode(<String, Object>{
+        'v': version,
+        'sid': serverId,
+        'eps': endpoints,
+        'pin': pin,
+        'tok': token,
+      });
 }

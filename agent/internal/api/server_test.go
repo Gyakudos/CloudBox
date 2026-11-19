@@ -235,6 +235,134 @@ func TestPairValidationDoesNotConsumeToken(t *testing.T) {
 	}
 }
 
+func TestMultipleDevicesPairAndRevokeLocally(t *testing.T) {
+	ident, err := identity.LoadOrCreate(t.TempDir())
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	pairings := pairing.NewManager(time.Minute)
+	store := devices.NewStore()
+	pairedCount := 0
+
+	srv := api.New(api.Options{
+		Identity: ident,
+		Pairing:  pairings,
+		Devices:  store,
+		Folders:  folder.NewRegistry(),
+		Volumes: func() ([]volume.Volume, error) {
+			return []volume.Volume{{Name: "E:", Path: `E:\`}}, nil
+		},
+		LocalState:   func() api.LocalState { return api.LocalState{} },
+		ListDevices:  func() []devices.Device { return store.List() },
+		RevokeDevice: func(id string) error { _, err := store.RevokeWithError(id); return err },
+		ListBackups:  func() []api.BackupInfo { return nil },
+		OnPaired: func(device devices.Device) error {
+			pairedCount++
+			_, err := store.SetBackupConfig(device.ID, devices.BackupConfig{
+				FolderID:  devices.BackupFolderID(device.ID),
+				Subfolder: "CloudBox/" + device.Name,
+				Root:      `E:\CloudBox\` + device.Name,
+				Enabled:   true,
+			})
+			return err
+		},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	handler := srv.Handler()
+
+	request := func(method, path string, body any, token string) *httptest.ResponseRecorder {
+		var reader io.Reader
+		if body != nil {
+			raw, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			reader = bytes.NewReader(raw)
+		}
+		req := httptest.NewRequest(method, path, reader)
+		req.RemoteAddr = "127.0.0.1:5151" // local routes are loopback-only
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	pair := func(name string) (string, string) {
+		t.Helper()
+		code, _, err := pairings.Issue()
+		if err != nil {
+			t.Fatalf("issue pairing code: %v", err)
+		}
+		rec := request(http.MethodPost, "/v1/pair", map[string]string{
+			"token": code, "device_name": name, "platform": "android",
+		}, "")
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("pair %s: status = %d body %s", name, rec.Code, rec.Body.String())
+		}
+		var body struct {
+			DeviceID    string `json:"device_id"`
+			DeviceToken string `json:"device_token"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode pair response: %v", err)
+		}
+		return body.DeviceID, body.DeviceToken
+	}
+
+	firstID, firstToken := pair("Pixel")
+	secondID, secondToken := pair("iPhone")
+	if firstToken == secondToken || firstID == secondID {
+		t.Fatal("two pairings produced the same token or device id")
+	}
+	if pairedCount != 2 {
+		t.Fatalf("OnPaired called %d times, want 2", pairedCount)
+	}
+	for _, id := range []string{firstID, secondID} {
+		device, ok := store.Get(id)
+		if !ok || !device.Backup.Enabled || device.Backup.FolderID != devices.BackupFolderID(id) {
+			t.Fatalf("device %s was not initialised with a backup folder: %+v", id, device)
+		}
+	}
+
+	rec := request(http.MethodGet, "/local/devices", nil, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list devices: status = %d", rec.Code)
+	}
+	var listed struct {
+		Devices []devices.Device `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode devices: %v", err)
+	}
+	if len(listed.Devices) != 2 {
+		t.Fatalf("listed %d devices, want 2", len(listed.Devices))
+	}
+
+	rec = request(http.MethodDelete, "/local/devices/"+firstID, nil, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("revoke: status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var deleted struct {
+		Deleted bool `json:"deleted"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &deleted); err != nil || !deleted.Deleted {
+		t.Fatalf("revoke response = %s err=%v", rec.Body.String(), err)
+	}
+	if rec := request(http.MethodGet, "/v1/system/info", nil, firstToken); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("revoked token still works: status = %d", rec.Code)
+	}
+	if rec := request(http.MethodGet, "/v1/system/info", nil, secondToken); rec.Code != http.StatusOK {
+		t.Fatalf("other device's token stopped working: status = %d", rec.Code)
+	}
+
+	rec = request(http.MethodDelete, "/local/devices/"+firstID, nil, "")
+	if rec.Code != http.StatusNotFound || decodeError(t, rec) != "DEVICE_NOT_FOUND" {
+		t.Fatalf("revoke twice: status = %d code = %q", rec.Code, decodeError(t, rec))
+	}
+}
+
 func TestVolumesErrorIsReported(t *testing.T) {
 	ident, err := identity.LoadOrCreate(t.TempDir())
 	if err != nil {

@@ -10,12 +10,15 @@ package api
 // to mint new pairing codes or repoint the backup folder.
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Gyakudos/CloudBox/agent/internal/destination"
+	"github.com/Gyakudos/CloudBox/agent/internal/devices"
+	"github.com/Gyakudos/CloudBox/agent/internal/folder"
 )
 
 // LocalPairing is the currently displayed pairing code and its state.
@@ -64,6 +67,120 @@ func (s *Server) handleLocalSetDestination(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.applyDestination(w, req)
+}
+
+// BackupInfo is one row of the PC app's paired-devices screen. Availability is computed by the
+// agent (which can see the drives) rather than guessed by the client.
+type BackupInfo struct {
+	DeviceID   string    `json:"device_id"`
+	DeviceName string    `json:"device_name"`
+	FolderID   string    `json:"folder_id"`
+	Volume     string    `json:"volume"`
+	Subfolder  string    `json:"subfolder"`
+	Root       string    `json:"root"`
+	Available  bool      `json:"available"`
+	Enabled    bool      `json:"enabled"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+}
+
+func (s *Server) handleLocalListDevices(w http.ResponseWriter, _ *http.Request) {
+	out := []devices.Device{}
+	if s.opts.ListDevices != nil {
+		out = s.opts.ListDevices()
+	}
+	if out == nil {
+		out = []devices.Device{}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Devices []devices.Device `json:"devices"`
+	}{Devices: out})
+}
+
+func (s *Server) handleLocalRevokeDevice(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.opts.RevokeDevice == nil {
+		writeError(w, http.StatusNotImplemented, "INTERNAL", "device management is not configured")
+		return
+	}
+	switch err := s.opts.RevokeDevice(id); {
+	case errors.Is(err, devices.ErrNotFound):
+		writeError(w, http.StatusNotFound, "DEVICE_NOT_FOUND", "no such paired device")
+		return
+	case err != nil:
+		s.opts.Logger.Error("revoke device", "err", err, "device_id", id)
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not revoke device")
+		return
+	}
+	s.opts.Logger.Info("device revoked", "device_id", id)
+	writeJSON(w, http.StatusOK, struct {
+		Deleted bool `json:"deleted"`
+	}{Deleted: true})
+}
+
+type setBackupRequest struct {
+	Volume    string `json:"volume"`
+	Subfolder string `json:"subfolder"`
+	// Enabled defaults to true when omitted, so a simple volume/subfolder PUT turns backups on.
+	Enabled *bool `json:"enabled"`
+}
+
+type setBackupResponse struct {
+	Device devices.Device `json:"device"`
+	Folder folder.Folder  `json:"folder"`
+}
+
+func (s *Server) handleLocalSetBackup(w http.ResponseWriter, r *http.Request) {
+	var req setBackupRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "malformed JSON body")
+		return
+	}
+	if strings.TrimSpace(req.Volume) == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "volume is required")
+		return
+	}
+	if s.opts.SetDeviceBackup == nil {
+		writeError(w, http.StatusNotImplemented, "INTERNAL", "device management is not configured")
+		return
+	}
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	device, selected, err := s.opts.SetDeviceBackup(r.PathValue("id"), req.Volume, req.Subfolder, enabled)
+	switch {
+	case errors.Is(err, devices.ErrNotFound):
+		writeError(w, http.StatusNotFound, "DEVICE_NOT_FOUND", "no such paired device")
+		return
+	case errors.Is(err, destination.ErrUnknownVolume):
+		writeError(w, http.StatusNotFound, "VOLUME_NOT_FOUND", "the PC no longer has that drive")
+		return
+	case errors.Is(err, destination.ErrInvalidSubfolder):
+		writeError(w, http.StatusBadRequest, "INVALID_SUBFOLDER", "the folder name is not usable on that drive")
+		return
+	case err != nil:
+		s.opts.Logger.Error("set device backup", "err", err, "device_id", r.PathValue("id"))
+		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not change the device backup")
+		return
+	}
+
+	s.opts.Logger.Info("device backup changed",
+		"device_id", device.ID, "folder_id", selected.ID, "root", selected.Root)
+	writeJSON(w, http.StatusOK, setBackupResponse{Device: device, Folder: selected})
+}
+
+func (s *Server) handleLocalListBackups(w http.ResponseWriter, _ *http.Request) {
+	out := []BackupInfo{}
+	if s.opts.ListBackups != nil {
+		out = s.opts.ListBackups()
+	}
+	if out == nil {
+		out = []BackupInfo{}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Backups []BackupInfo `json:"backups"`
+	}{Backups: out})
 }
 
 // requireLoopback rejects any request that did not arrive over a loopback connection. Checking

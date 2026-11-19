@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +24,8 @@ import (
 type localHarness struct {
 	handler   http.Handler
 	refreshed int
+	devices   *devices.Store
+	deviceID  string
 }
 
 func newLocalHarness(t *testing.T, withLocal bool) *localHarness {
@@ -32,10 +36,27 @@ func newLocalHarness(t *testing.T, withLocal bool) *localHarness {
 		t.Fatalf("identity: %v", err)
 	}
 	h := &localHarness{}
+	store := devices.NewStore()
+	device, _, err := store.Create("Pixel", "android", "v")
+	if err != nil {
+		t.Fatalf("create device: %v", err)
+	}
+	if _, err := store.SetBackupConfig(device.ID, devices.BackupConfig{
+		FolderID:  devices.BackupFolderID(device.ID),
+		Volume:    "E:",
+		Subfolder: "CloudBox/Phone",
+		Root:      filepath.Join(`E:\`, "CloudBox", "Phone"),
+		Enabled:   true,
+	}); err != nil {
+		t.Fatalf("set backup config: %v", err)
+	}
+	h.devices = store
+	h.deviceID = device.ID
+
 	opts := api.Options{
 		Identity:   ident,
 		Pairing:    pairing.NewManager(time.Minute),
-		Devices:    devices.NewStore(),
+		Devices:    store,
 		ServerName: "TEST-PC",
 		Version:    "test-version",
 		StartedAt:  time.Now(),
@@ -45,6 +66,34 @@ func newLocalHarness(t *testing.T, withLocal bool) *localHarness {
 		},
 		SetDestination: func(vol, sub string) (folder.Folder, error) {
 			return folder.Folder{ID: destination.DefaultID, Name: sub, Root: vol + sub}, nil
+		},
+		ListDevices:  func() []devices.Device { return store.List() },
+		RevokeDevice: func(id string) error { _, err := store.RevokeWithError(id); return err },
+		SetDeviceBackup: func(id, vol, sub string, enabled bool) (devices.Device, folder.Folder, error) {
+			dev, err := store.SetBackupConfig(id, devices.BackupConfig{
+				FolderID:  devices.BackupFolderID(id),
+				Volume:    vol,
+				Subfolder: sub,
+				Root:      filepath.Join(vol, filepath.FromSlash(sub)),
+				Enabled:   enabled,
+			})
+			if err != nil {
+				return devices.Device{}, folder.Folder{}, err
+			}
+			return dev, folder.Folder{ID: dev.Backup.FolderID, Name: sub, Root: dev.Backup.Root}, nil
+		},
+		ListBackups: func() []api.BackupInfo {
+			out := []api.BackupInfo{}
+			for _, dev := range store.List() {
+				cfg := dev.Backup
+				out = append(out, api.BackupInfo{
+					DeviceID: dev.ID, DeviceName: dev.Name,
+					FolderID: cfg.FolderID, Volume: cfg.Volume,
+					Subfolder: cfg.Subfolder, Root: cfg.Root,
+					Available: true, Enabled: cfg.Enabled, LastSeenAt: dev.LastSeenAt,
+				})
+			}
+			return out
 		},
 	}
 	if withLocal {
@@ -99,6 +148,10 @@ func TestLocalRoutesRejectNonLoopback(t *testing.T) {
 		{http.MethodPost, "/local/pairing/refresh"},
 		{http.MethodGet, "/local/volumes"},
 		{http.MethodPut, "/local/destination"},
+		{http.MethodGet, "/local/devices"},
+		{http.MethodDelete, "/local/devices/device-id"},
+		{http.MethodPut, "/local/devices/device-id/backup"},
+		{http.MethodGet, "/local/backups"},
 	} {
 		rec := h.request(tc.method, tc.path, remote, map[string]string{"volume": "E:"})
 		if rec.Code != http.StatusForbidden {
@@ -195,5 +248,109 @@ func TestLocalRoutesAbsentWithoutLocalState(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404", path, rec.Code)
 		}
+	}
+}
+
+func TestLocalDevicesAndBackups(t *testing.T) {
+	h := newLocalHarness(t, true)
+	loopback := "127.0.0.1:5151"
+
+	rec := h.request(http.MethodGet, "/local/devices", loopback, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("devices: status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var listed struct {
+		Devices []devices.Device `json:"devices"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode devices: %v", err)
+	}
+	if len(listed.Devices) != 1 || listed.Devices[0].ID != h.deviceID {
+		t.Fatalf("devices = %+v", listed.Devices)
+	}
+
+	rec = h.request(http.MethodGet, "/local/backups", loopback, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("backups: status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var backups struct {
+		Backups []api.BackupInfo `json:"backups"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &backups); err != nil {
+		t.Fatalf("decode backups: %v", err)
+	}
+	if len(backups.Backups) != 1 {
+		t.Fatalf("backups = %+v", backups.Backups)
+	}
+	row := backups.Backups[0]
+	if row.DeviceID != h.deviceID || row.DeviceName != "Pixel" ||
+		row.FolderID != devices.BackupFolderID(h.deviceID) || row.Volume != "E:" ||
+		row.Subfolder != "CloudBox/Phone" || !row.Enabled || !row.Available {
+		t.Fatalf("backup row = %+v", row)
+	}
+
+	rec = h.request(http.MethodPut, "/local/devices/"+h.deviceID+"/backup", loopback, map[string]any{
+		"volume": "E:", "subfolder": "CloudBox/New", "enabled": false,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set backup: status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var updated struct {
+		Device devices.Device `json:"device"`
+		Folder folder.Folder  `json:"folder"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("decode set backup: %v", err)
+	}
+	if updated.Device.Backup.Enabled || updated.Device.Backup.Subfolder != "CloudBox/New" {
+		t.Fatalf("updated device = %+v", updated.Device)
+	}
+	if updated.Folder.ID != devices.BackupFolderID(h.deviceID) || updated.Folder.Root == "" {
+		t.Fatalf("updated folder = %+v", updated.Folder)
+	}
+
+	rec = h.request(http.MethodGet, "/local/backups", loopback, nil)
+	if err := json.Unmarshal(rec.Body.Bytes(), &backups); err != nil {
+		t.Fatalf("decode backups after update: %v", err)
+	}
+	if len(backups.Backups) == 1 && backups.Backups[0].Enabled {
+		t.Fatal("backup still reported as enabled after disabling it")
+	}
+
+	rec = h.request(http.MethodDelete, "/local/devices/"+h.deviceID, loopback, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete: status = %d body %s", rec.Code, rec.Body.String())
+	}
+	var deleted struct {
+		Deleted bool `json:"deleted"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &deleted); err != nil || !deleted.Deleted {
+		t.Fatalf("delete response = %s err=%v", rec.Body.String(), err)
+	}
+	for _, path := range []string{"/local/devices", "/local/backups"} {
+		rec = h.request(http.MethodGet, path, loopback, nil)
+		if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) == "" {
+			t.Fatalf("%s after delete: status = %d body %s", path, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), h.deviceID) {
+			t.Fatalf("%s still lists the revoked device: %s", path, rec.Body.String())
+		}
+	}
+}
+
+func TestLocalDeviceNotFound(t *testing.T) {
+	h := newLocalHarness(t, true)
+	loopback := "127.0.0.1:5151"
+
+	rec := h.request(http.MethodDelete, "/local/devices/missing", loopback, nil)
+	if rec.Code != http.StatusNotFound || decodeError(t, rec) != "DEVICE_NOT_FOUND" {
+		t.Fatalf("delete unknown: status = %d code = %q", rec.Code, decodeError(t, rec))
+	}
+
+	rec = h.request(http.MethodPut, "/local/devices/missing/backup", loopback, map[string]string{
+		"volume": "E:", "subfolder": "CloudBox",
+	})
+	if rec.Code != http.StatusNotFound || decodeError(t, rec) != "DEVICE_NOT_FOUND" {
+		t.Fatalf("backup unknown: status = %d code = %q", rec.Code, decodeError(t, rec))
 	}
 }

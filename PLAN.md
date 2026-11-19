@@ -436,8 +436,9 @@ CloudBox/
 2. **Two-way on the phone: app-private or SAF?** App-private is simpler and reliable; SAF is
    visible in Files and other apps. Leaning app-private + "Save to gallery" for v1.
 3. **Trash retention default** — 30 days, forever, or size-capped (e.g. 5% of volume)?
-4. **Multi-phone support in v1?** The schema allows it; the UI and conflict policy get more
-   opinions. Suggest: allow it, but one phone at a time per source.
+4. **Multi-phone support in v1?** Settled for backups: the agent persists a device registry and
+   each phone gets its own backup folder, configurable from the PC's Paired Devices tab. Conflict
+   policy for two-way sync is still open — allow multiple phones, one at a time per source.
 5. **Distribution** — Play Store (background-permission justification needed), direct APK, or
    both? Affects how aggressively we can ask for battery exemptions.
 6. **Licence** — MIT/Apache for the agent? Decide before the first commit.

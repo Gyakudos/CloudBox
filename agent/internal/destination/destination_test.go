@@ -130,6 +130,42 @@ func TestCurrentChoiceRestoresPersistedVolume(t *testing.T) {
 	}
 }
 
+func TestSetForIDLeavesGlobalChoiceAlone(t *testing.T) {
+	vols := testVolumes(t)
+	dir := t.TempDir()
+	registry := folder.NewRegistry()
+	mgr := New(dir, registry, vols, safepath.DefaultPolicy())
+
+	if _, err := mgr.Set("C:", "Global"); err != nil {
+		t.Fatalf("Set default: %v", err)
+	}
+	global, _ := mgr.CurrentChoice()
+
+	perDevice, dest, err := mgr.SetForID("backup-device-1", "E:", "Phone")
+	if err != nil {
+		t.Fatalf("SetForID: %v", err)
+	}
+	if perDevice.ID != "backup-device-1" || dest.Volume != "E:" || dest.Subfolder != "Phone" {
+		t.Fatalf("per-device result = %+v / %+v", perDevice, dest)
+	}
+	vol, _ := volume.Find(mustVolumes(t, vols), "E:")
+	if want := filepath.Join(vol.Path, "Phone"); perDevice.Root != want {
+		t.Fatalf("per-device root = %q, want %q", perDevice.Root, want)
+	}
+	if finalizer, ok := registry.Get("backup-device-1"); !ok || finalizer.Root != perDevice.Root {
+		t.Fatal("per-device folder was not registered")
+	}
+
+	after, ok := mgr.CurrentChoice()
+	if !ok || after != global {
+		t.Fatalf("global choice changed: before %+v after %+v", global, after)
+	}
+	persisted, ok, err := load(dir)
+	if err != nil || !ok || persisted.Volume != "C:" || persisted.Subfolder != "Global" {
+		t.Fatalf("destination.json changed: %+v ok=%v err=%v", persisted, ok, err)
+	}
+}
+
 func TestSetRejectsUnknownVolume(t *testing.T) {
 	mgr, _ := newManager(t, testVolumes(t))
 

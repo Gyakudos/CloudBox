@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Talks to the PC agent over the local network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Scans the pairing QR code shown by the PC agent. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
     <application
         android:label="CloudBox"
         android:name="${applicationName}"

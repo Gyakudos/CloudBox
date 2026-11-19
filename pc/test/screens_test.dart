@@ -1,19 +1,31 @@
 import 'package:cloudbox_pc/core/local_api.dart';
 import 'package:cloudbox_pc/core/models.dart';
+import 'package:cloudbox_pc/features/backups/backups_screen.dart';
+import 'package:cloudbox_pc/features/devices/paired_devices_screen.dart';
 import 'package:cloudbox_pc/features/pairing/pairing_screen.dart';
 import 'package:cloudbox_pc/features/storage/storage_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeApi implements LocalAgentApi {
-  FakeApi({LocalState? state, List<VolumeInfo>? available})
-      : state = state ?? _state(),
-        available = available ?? _volumes;
+  FakeApi({
+    LocalState? state,
+    List<VolumeInfo>? available,
+    List<PairedDevice>? paired,
+    List<BackupStatus>? backupList,
+  })  : state = state ?? _state(),
+        available = available ?? _volumes,
+        _pairedDevices = paired ?? _devices,
+        _backupStatuses = backupList ?? _backups;
 
   LocalState state;
   final List<VolumeInfo> available;
+  List<PairedDevice> _pairedDevices;
+  final List<BackupStatus> _backupStatuses;
   int refreshes = 0;
+  int revokes = 0;
   SelectedFolder? lastSet;
+  DeviceBackupConfig? lastDeviceBackup;
 
   @override
   Future<LocalState> status() async => state;
@@ -35,6 +47,37 @@ class FakeApi implements LocalAgentApi {
     lastSet = SelectedFolder(id: 'default', name: subfolder, root: '$volume\\$subfolder');
     return lastSet!;
   }
+
+  @override
+  Future<List<PairedDevice>> devices() async => _pairedDevices;
+
+  @override
+  Future<void> revokeDevice(String id) async {
+    revokes++;
+    _pairedDevices = _pairedDevices.where((d) => d.id != id).toList();
+  }
+
+  @override
+  Future<PairedDevice> setDeviceBackup({
+    required String id,
+    required String volume,
+    required String subfolder,
+    required bool enabled,
+  }) async {
+    lastDeviceBackup = DeviceBackupConfig(
+      folderId: 'backup-$id',
+      volume: volume,
+      subfolder: subfolder,
+      root: '$volume\\$subfolder',
+      enabled: enabled,
+    );
+    final updated = _pairedDevices.firstWhere((d) => d.id == id).copyWith(backup: lastDeviceBackup!);
+    _pairedDevices = _pairedDevices.map((d) => d.id == id ? updated : d).toList();
+    return updated;
+  }
+
+  @override
+  Future<List<BackupStatus>> backups() async => _backupStatuses;
 
   @override
   void close() {}
@@ -99,6 +142,41 @@ final List<VolumeInfo> _volumes = [
     free: 1000000000000,
     removable: true,
     network: false,
+  ),
+];
+
+final List<PairedDevice> _devices = [
+  PairedDevice(
+    id: 'dev-1',
+    name: 'Pixel 8',
+    platform: 'android',
+    appVersion: '0.01.15.11.26',
+    createdAt: '2026-11-15T10:00:00Z',
+    lastSeenAt: '2026-11-15T11:00:00Z',
+    active: true,
+    backup: const DeviceBackupConfig(
+      folderId: 'backup-dev-1',
+      volume: 'E:',
+      subfolder: 'CloudBox/Pixel-8',
+      root: r'E:\CloudBox\Pixel-8',
+      enabled: true,
+    ),
+  ),
+];
+
+final List<BackupStatus> _backups = [
+  BackupStatus(
+    deviceId: 'dev-1',
+    deviceName: 'Pixel 8',
+    folderId: 'backup-dev-1',
+    volume: 'E:',
+    subfolder: 'CloudBox/Pixel-8',
+    root: r'E:\CloudBox\Pixel-8',
+    available: true,
+    enabled: true,
+    lastBackupAt: '2026-11-15T11:00:00Z',
+    fileCount: 12,
+    bytes: 2048,
   ),
 ];
 
@@ -193,5 +271,62 @@ void main() {
     expect(find.text(r'C:\Photos'), findsOneWidget);
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.controller?.text, 'Photos');
+  });
+
+  testWidgets('paired devices screen can configure a device backup folder', (tester) async {
+    final api = FakeApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: PairedDevicesScreen(
+        api: api,
+        volumes: api.available,
+        onAddDevice: () async {},
+      )),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pixel 8'), findsOneWidget);
+    expect(find.text(r'E:\CloudBox\Pixel-8'), findsOneWidget);
+
+    await tester.tap(find.text('Configure backup'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Backups/Phone');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(api.lastDeviceBackup?.subfolder, 'Backups/Phone');
+    expect(api.lastDeviceBackup?.volume, 'E:');
+  });
+
+  testWidgets('paired devices screen can revoke a device', (tester) async {
+    final api = FakeApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: PairedDevicesScreen(
+        api: api,
+        volumes: api.available,
+        onAddDevice: () async {},
+      )),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove device'));
+    await tester.pumpAndSettle();
+
+    expect(api.revokes, 1);
+    expect(find.text('No phones have paired yet.'), findsOneWidget);
+  });
+
+  testWidgets('backups screen shows each device destination', (tester) async {
+    final api = FakeApi();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: BackupsScreen(api: api, onConfigure: (_) {})),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pixel 8'), findsOneWidget);
+    expect(find.text(r'E:\CloudBox\Pixel-8'), findsOneWidget);
+    expect(find.text('Available'), findsOneWidget);
+    expect(find.text('2.0 KB'), findsOneWidget);
   });
 }

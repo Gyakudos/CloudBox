@@ -8,11 +8,13 @@ import '../core/gen/version.dart';
 import '../core/pairing_flow.dart';
 import '../core/pairing_payload.dart';
 import 'drives_screen.dart';
+import 'qr_scan_screen.dart';
+import 'update_button.dart';
 
-/// First run: paste the pairing code the PC agent shows, and connect.
+/// First run: paste (or scan) the pairing code the PC agent shows, and connect.
 ///
-/// There is no camera scanner yet, so the code is pasted (or copied from the clipboard with the
-/// button below). The code is a small JSON document — see [PairingPayload].
+/// The code is a small JSON document — see [PairingPayload]. It can be pasted, copied from the
+/// clipboard with the button below, or scanned with the QR button in the app bar.
 class PairScreen extends StatefulWidget {
   const PairScreen({super.key});
 
@@ -55,6 +57,15 @@ class _PairScreenState extends State<PairScreen> {
     setState(() => _error = null);
   }
 
+  Future<void> _scanQr() async {
+    final payload = await Navigator.of(context).push<PairingPayload>(
+      MaterialPageRoute(builder: (_) => const QrScanScreen()),
+    );
+    if (payload == null || !mounted) return;
+    _payloadController.text = payload.toJson();
+    setState(() => _error = null);
+  }
+
   Future<void> _pair() async {
     if (_busy) return;
     setState(() {
@@ -94,20 +105,29 @@ class _PairScreenState extends State<PairScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Connect to your PC'),
+        actions: [
+          IconButton(
+            tooltip: 'Scan QR',
+            icon: const Icon(Icons.qr_code_scanner),
+            onPressed: _busy ? null : _scanQr,
+          ),
+          UpdateButton(platform: 'android'),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
               children: [
                 Icon(Icons.cloud_upload_outlined, size: 64, color: theme.colorScheme.primary),
                 const SizedBox(height: 16),
-                Text('Connect to your PC', style: theme.textTheme.headlineSmall, textAlign: TextAlign.center),
-                const SizedBox(height: 8),
                 Text(
-                  'Start the CloudBox agent on your PC, then paste the pairing code it shows. '
-                  'Your files never touch a server we control.',
+                  'Start the CloudBox agent on your PC, then scan its QR code or paste the '
+                  'pairing code it shows. Your files never touch a server we control.',
                   style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   textAlign: TextAlign.center,
                 ),

@@ -130,8 +130,9 @@ pwsh eng/smoke.ps1
 ```
 
 **Android app** — Flutter. Pairs over pinned TLS, lists the PC's drives, then sends files to the
-drive you pick. Paste the pairing code the agent prints (there is no camera scanner yet), choose
+drive you pick. Scan the QR shown by the PC app or paste the pairing code the agent prints, choose
 a drive, pick the files to back up, and watch a resumable, hash-verified transfer land on the PC.
+The **Update** button in the header checks GitHub Releases for a newer build.
 
 ```sh
 cd app
@@ -145,9 +146,12 @@ Or, from the repository root, `pwsh eng/build-apk.ps1` stages the APK as
 `dist/cloudbox-<version>.apk`. The Android `versionName`/`versionCode` are read straight from
 `VERSION` in `android/app/build.gradle.kts`; see `app/README.md` for the details.
 
-**PC desktop app** — a Flutter Windows companion showing the live pairing code/QR and the drive
-picker. It finds the agent from `%APPDATA%\CloudBox\pairing.json` and uses its loopback-only
-`/local/*` API over pinned HTTPS, so no phone token is involved.
+**PC desktop app** — a Flutter Windows companion with four tabs: **Pairing** (live code/QR),
+**Storage** (the default drive), **Paired Devices** (add, remove, and set a backup folder for each
+phone), and **Backups** (where each device currently writes). The **Update** button in the header
+checks GitHub Releases for a newer build. It finds the agent from `%APPDATA%\CloudBox\pairing.json`
+and uses its loopback-only `/local/*` API over pinned HTTPS, so no phone token is involved. Paired
+devices and their per-device folders are persisted in `%APPDATA%\CloudBox\devices.json`.
 
 ```sh
 cd pc
