@@ -418,3 +418,34 @@ were GC'd, so the resync is authoritative.
    already covers the common case.
 5. **`/v1/folders/{id}/entries` pagination cursor.** Path-keyset vs `seq`-offset. Path-keyset is
    stable under mutation; prefer it.
+
+---
+
+## 14. Local UI API (PC desktop app)
+
+Everything above is the phone ↔ agent contract. The Flutter Windows companion (`pc/`) uses a
+separate, deliberately smaller surface to show the pairing code and set the backup drive. It is
+**not** part of the sync protocol and a paired phone cannot reach it.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /local/status` | Current code, expiry, whether it is still unredeemed, pin, endpoints, chosen destination, QR bytes. |
+| `POST /local/pairing/refresh` | Burn the displayed code and issue a fresh one; returns the same envelope. |
+| `GET /local/volumes` | Same drive list the phone sees (`{volumes:[…]}`). |
+| `PUT /local/destination` | Same `{volume, subfolder}` choice as `/v1/system/destination`. |
+
+Rules:
+
+- **Loopback only.** Every `/local/*` request is rejected with `403 {error:{code:"LOCAL_ONLY"}}`
+  unless the socket peer is `127.0.0.1`, `::1` or another loopback address. Checking the TCP peer
+  (not a `Host` header) means a DNS name pointing at the PC cannot bypass it. A phone on the LAN
+  can pair and upload, but cannot mint codes or repoint the backup folder.
+- **No device token.** The desktop app *is* the local user and already has the agent's data
+  directory; a bearer token would add nothing. It still pins TLS using the pin from
+  `pairing.json`, so it cannot be impersonated by another process on the machine.
+- **Discovery is a file, not the network.** The app reads `<data dir>/pairing.json` (written on
+  every start and every refresh) to learn the pin and prefer a loopback endpoint from `eps`.
+  Startup with no agent running is a friendly "start CloudBox" message, not a network scan.
+- **One live code.** Startup and Refresh both go through the agent's `pairingSession`, so the QR
+  image, the handoff files and `/local/status` always describe the same token. Status checks use a
+  non-consuming `Valid()` lookup, so polling cannot invalidate the code being displayed.

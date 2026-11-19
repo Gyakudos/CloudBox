@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,7 +19,6 @@ import (
 	"github.com/Gyakudos/CloudBox/agent/internal/blob"
 	"github.com/Gyakudos/CloudBox/agent/internal/destination"
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
-	"github.com/Gyakudos/CloudBox/agent/internal/discovery"
 	"github.com/Gyakudos/CloudBox/agent/internal/folder"
 	"github.com/Gyakudos/CloudBox/agent/internal/identity"
 	"github.com/Gyakudos/CloudBox/agent/internal/mdns"
@@ -91,6 +89,14 @@ func runServe(args []string) int {
 	}
 	logger.Info("sync folder ready", "id", selected.ID, "root", selected.Root)
 
+	port := listenPort(*addr)
+	session := newPairingSession(*dir, *name, ident, pairings, port, logger)
+	snap, err := session.issue()
+	if err != nil {
+		logger.Error("issue pairing token", "err", err)
+		return 1
+	}
+
 	srv := api.New(api.Options{
 		Identity:       ident,
 		Pairing:        pairings,
@@ -99,50 +105,17 @@ func runServe(args []string) int {
 		Folders:        folders,
 		Volumes:        volume.List,
 		SetDestination: destinations.Set,
-		ServerName:     *name,
-		Version:        version.Version,
-		StartedAt:      time.Now(),
-		Logger:         logger,
+		// The desktop app is local: it gets status and the control surface without a device
+		// token, over routes guarded to loopback connections (see api/local.go).
+		LocalState:   func() api.LocalState { return session.state(destinations) },
+		LocalRefresh: func() (api.LocalState, error) { return session.refresh(destinations) },
+		ServerName:   *name,
+		Version:      version.Version,
+		StartedAt:    time.Now(),
+		Logger:       logger,
 	})
 
-	token, expires, err := pairings.Issue()
-	if err != nil {
-		logger.Error("issue pairing token", "err", err)
-		return 1
-	}
-
-	port := listenPort(*addr)
-	payload := pairing.Payload{
-		V:   1,
-		SID: ident.ServerID,
-		EPs: discovery.LocalEndpoints(port),
-		Pin: ident.Pin,
-		Tok: token,
-	}
-	raw, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		logger.Error("encode pairing payload", "err", err)
-		return 1
-	}
-
-	payloadPath := filepath.Join(*dir, "pairing.json")
-	if err := os.WriteFile(payloadPath, append(raw, '\n'), 0o600); err != nil {
-		logger.Warn("could not write pairing payload", "path", payloadPath, "err", err)
-	}
-
-	// The QR image is what the user actually scans. The payload itself is public (it is shown
-	// on screen), but the file is still written 0600: it carries a live pairing token.
-	qrPath := filepath.Join(*dir, "pairing.png")
-	qrWritten := false
-	if png, err := pairing.QRPNG(string(raw)); err != nil {
-		logger.Warn("could not render QR image", "err", err)
-	} else if err := os.WriteFile(qrPath, png, 0o600); err != nil {
-		logger.Warn("could not write QR image", "path", qrPath, "err", err)
-	} else {
-		qrWritten = true
-	}
-
-	printBanner(ident, *name, port, expires, *pairTTL, payloadPath, qrPath, qrWritten, raw)
+	printBanner(ident, *name, *addr, port, snap.expires, *pairTTL, snap.qrPath, snap.qrWritten, snap.payload)
 
 	// Advertise last, once everything that could fail has. The TXT records carry identity only
 	// — never the pairing token, because anyone on the LAN can read them.
@@ -189,14 +162,14 @@ func runServe(args []string) int {
 	return 0
 }
 
-func printBanner(ident *identity.Identity, name string, port int, expires time.Time, ttl time.Duration, payloadPath, qrPath string, qrWritten bool, payload []byte) {
+func printBanner(ident *identity.Identity, name, addr string, port int, expires time.Time, ttl time.Duration, qrPath string, qrWritten bool, payload []byte) {
 	fmt.Printf("\nCloudBox %s\n", version.Version)
 	fmt.Printf("  server       %s\n", name)
-	fmt.Printf("  listen       https://0.0.0.0:%d\n", port)
+	fmt.Printf("  listen       https://%s\n", displayAddr(addr, port))
 	fmt.Printf("  server id    %s\n", ident.ServerID)
 	fmt.Printf("  cert pin     %s\n", ident.Pin)
 	fmt.Printf("  pairing ttl  %s (expires %s)\n", ttl, expires.Format(time.RFC3339))
-	fmt.Printf("  payload      %s\n", payloadPath)
+	fmt.Printf("  payload      %s\n", filepath.Join(ident.Dir, pairingFileName))
 	if qrWritten {
 		fmt.Printf("  qr image     %s\n", qrPath)
 	}
@@ -207,6 +180,17 @@ func printBanner(ident *identity.Identity, name string, port int, expires time.T
 		fmt.Printf("\n%s\n", payload)
 	}
 	fmt.Printf("\nSanity check:\n  curl -k https://127.0.0.1:%d/healthz\n\n", port)
+}
+
+// displayAddr renders the --addr value for the banner. An empty host (":8443") is a wildcard
+// bind, shown as 0.0.0.0; a concrete bind such as 127.0.0.1 is shown as given so the printed URL
+// is one the user can actually open.
+func displayAddr(addr string, port int) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil || host == "" {
+		host = "0.0.0.0"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // flagSet reports whether the named flag was given on the command line. An explicitly set

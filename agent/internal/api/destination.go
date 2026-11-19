@@ -28,6 +28,12 @@ func (s *Server) handleSetDestination(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "malformed JSON body")
 		return
 	}
+	s.applyDestination(w, req)
+}
+
+// applyDestination is shared by the device-authenticated and loopback-only routes: the choice
+// and its validation are identical, only the caller's trust boundary differs.
+func (s *Server) applyDestination(w http.ResponseWriter, req setDestinationRequest) {
 	if strings.TrimSpace(req.Volume) == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "volume is required")
 		return

@@ -104,7 +104,8 @@ $generatedDart = @(
 
 $artifacts = @(
     @{ Path = (Join-Path $repoRoot 'agent/internal/version/generated.go'); Content = $generatedGo },
-    @{ Path = (Join-Path $repoRoot 'app/lib/core/gen/version.dart'); Content = $generatedDart }
+    @{ Path = (Join-Path $repoRoot 'app/lib/core/gen/version.dart'); Content = $generatedDart },
+    @{ Path = (Join-Path $repoRoot 'pc/lib/core/gen/version.dart'); Content = $generatedDart }
 )
 
 # --------------------------------------------------------------------------- write or verify

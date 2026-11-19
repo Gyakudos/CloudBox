@@ -88,6 +88,10 @@ CloudBox/
 │  ├─ lib/core/                pinned HTTPS client, pairing payload, models, transfer engine
 │  ├─ lib/ui/                  pairing, drive-picker and send screens
 │  └─ lib/core/gen/            generated version constants (do not edit)
+├─ pc/                         Flutter Windows companion app
+│  ├─ lib/core/                pinned HTTPS client for /local/*, config reader, models
+│  ├─ lib/features/            pairing and storage screens
+│  └─ lib/core/gen/            generated version constants (do not edit)
 └─ dist/                       release artifacts (git-ignored, built by CI)
 ```
 
@@ -96,7 +100,7 @@ CloudBox/
 | Toolchain | Version | Needed for |
 |-----------|---------|------------|
 | Go | ≥ 1.26 | `agent/` |
-| Flutter | ≥ 3.47 (Dart ≥ 3.13) | `app/` — CI pins 3.47.8 |
+| Flutter | ≥ 3.47 (Dart ≥ 3.13) | `app/`, `pc/` — CI pins 3.47.8 |
 | Android SDK | API 35+ | `app/` — Android builds |
 | JDK | 17+ | Android Gradle builds (JDK 21 present here) |
 
@@ -141,6 +145,20 @@ Or, from the repository root, `pwsh eng/build-apk.ps1` stages the APK as
 `dist/cloudbox-<version>.apk`. The Android `versionName`/`versionCode` are read straight from
 `VERSION` in `android/app/build.gradle.kts`; see `app/README.md` for the details.
 
+**PC desktop app** — a Flutter Windows companion showing the live pairing code/QR and the drive
+picker. It finds the agent from `%APPDATA%\CloudBox\pairing.json` and uses its loopback-only
+`/local/*` API over pinned HTTPS, so no phone token is involved.
+
+```sh
+cd pc
+flutter pub get
+flutter analyze
+flutter test
+flutter build windows            # → build/windows/x64/runner/Release/cloudbox_pc.exe
+```
+
+See `pc/README.md` for how discovery and pinning work.
+
 **Windows installer** — installs the agent per-user (no administrator required), adds a Start
 Menu entry, and can start the agent at sign-in:
 
@@ -155,12 +173,13 @@ entry launches the agent hidden.
 
 It also offers an optional **Flutter SDK** task (checked by default): it downloads the pinned
 Flutter 3.47.8 Windows archive (~1.9 GB) from Google's release bucket, extracts it to
-`%LOCALAPPDATA%\CloudBox\flutter`, and adds its `bin` to the user `PATH`, so the Android app can
-be built on that PC. The agent itself never needs Flutter — the SDK is only there for building the
-app, and it is removed again on uninstall. Uncheck the task if you don't want it.
+`%LOCALAPPDATA%\CloudBox\flutter`, and adds its `bin` to the user `PATH`, so the Android and PC
+apps can be built on that PC. The agent itself never needs Flutter — the SDK is only there for
+building the apps, and it is removed again on uninstall. Uncheck the task if you don't want it.
 
-Building the app on that PC still needs Git for Windows, the Android SDK and a JDK 17+; the
-installer sets up only the Flutter SDK.
+Building the apps on that PC still needs Git for Windows and Visual Studio Build Tools (for the
+PC app); the Android app additionally needs the Android SDK and a JDK 17+. The installer sets up
+only the Flutter SDK.
 
 ## Versioning
 

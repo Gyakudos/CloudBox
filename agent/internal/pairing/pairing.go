@@ -90,6 +90,20 @@ func (m *Manager) Redeem(token string) error {
 	return nil
 }
 
+// Valid reports whether token is still unredeemed and unexpired, without consuming it. The
+// PC-side UI polls this to know when a phone has paired or when a displayed code has expired;
+// only Redeem consumes a token.
+func (m *Manager) Valid(token string) bool {
+	if token == "" {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sweepLocked()
+	_, ok := m.tokens[token]
+	return ok
+}
+
 // Pending reports how many unexpired tokens are outstanding.
 func (m *Manager) Pending() int {
 	m.mu.Lock()

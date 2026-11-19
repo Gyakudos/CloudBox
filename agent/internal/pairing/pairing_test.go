@@ -56,6 +56,45 @@ func TestTokenExpires(t *testing.T) {
 	}
 }
 
+func TestValidDoesNotConsume(t *testing.T) {
+	m := NewManager(time.Minute)
+	token, _, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	if !m.Valid(token) {
+		t.Fatal("Valid = false for a live token")
+	}
+	if m.Valid("") || m.Valid("nope") {
+		t.Fatal("Valid = true for an unknown token")
+	}
+	if err := m.Redeem(token); err != nil {
+		t.Fatalf("Redeem after Valid: %v", err)
+	}
+	if m.Valid(token) {
+		t.Fatal("Valid = true for a redeemed token")
+	}
+}
+
+func TestValidSweepsExpired(t *testing.T) {
+	m := NewManager(time.Minute)
+	fixed := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)
+	m.now = func() time.Time { return fixed }
+	token, _, err := m.Issue()
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+
+	m.now = func() time.Time { return fixed.Add(2 * time.Minute) }
+	if m.Valid(token) {
+		t.Fatal("Valid = true for an expired token")
+	}
+	if got := m.Pending(); got != 0 {
+		t.Fatalf("Pending after Valid = %d, want 0", got)
+	}
+}
+
 func TestPendingSweepsExpired(t *testing.T) {
 	m := NewManager(time.Minute)
 	fixed := time.Date(2026, 11, 13, 9, 0, 0, 0, time.UTC)

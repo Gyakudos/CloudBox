@@ -55,8 +55,10 @@ type Manager struct {
 	volumes func() ([]volume.Volume, error)
 	policy  safepath.Policy
 
-	mu      sync.Mutex
-	current folder.Folder
+	mu        sync.Mutex
+	current   folder.Folder
+	choice    Destination
+	hasChoice bool
 }
 
 // New returns a Manager that registers its choice in folders and persists it under dir.
@@ -77,7 +79,10 @@ func (m *Manager) Adopt(root, name string) (folder.Folder, error) {
 	if err := m.folders.Register(DefaultID, name, finalizer); err != nil {
 		return folder.Folder{}, err
 	}
-	return m.record(folder.Folder{ID: DefaultID, Name: name, Root: finalizer.Root}), nil
+	selected := folder.Folder{ID: DefaultID, Name: name, Root: finalizer.Root}
+	// An explicit --sync-root has no source volume; the UI shows the resolved path only.
+	m.record(selected, Destination{Subfolder: name, Root: finalizer.Root})
+	return selected, nil
 }
 
 // Set resolves volumeName and subfolder to a sync root, points the default folder at it, and
@@ -111,11 +116,11 @@ func (m *Manager) Set(volumeName, subfolder string) (folder.Folder, error) {
 	if err := m.folders.Register(DefaultID, clean, finalizer); err != nil {
 		return folder.Folder{}, err
 	}
-	m.record(selected)
+	dest := Destination{Volume: vol.Name, Subfolder: clean, Root: finalizer.Root}
+	m.record(selected, dest)
 
 	// Persist after the registry is live: a failed write should not leave the phone pointing at
 	// a folder the agent has not actually adopted.
-	dest := Destination{Volume: vol.Name, Subfolder: clean, Root: finalizer.Root}
 	if err := save(m.dir, dest); err != nil {
 		return selected, err
 	}
@@ -138,7 +143,9 @@ func (m *Manager) Restore() (folder.Folder, bool, error) {
 	if err := m.folders.Register(DefaultID, dest.Subfolder, finalizer); err != nil {
 		return folder.Folder{}, false, err
 	}
-	return m.record(folder.Folder{ID: DefaultID, Name: dest.Subfolder, Root: finalizer.Root}), true, nil
+	selected := folder.Folder{ID: DefaultID, Name: dest.Subfolder, Root: finalizer.Root}
+	m.record(selected, dest)
+	return selected, true, nil
 }
 
 // Current returns the active default folder.
@@ -151,10 +158,24 @@ func (m *Manager) Current() (folder.Folder, bool) {
 	return m.current, true
 }
 
-func (m *Manager) record(f folder.Folder) folder.Folder {
+// CurrentChoice returns the active destination, including the volume it was resolved from.
+// It lets the PC-side UI show where backups actually land, whether that came from a persisted
+// choice, an explicit --sync-root, or the first-run default.
+func (m *Manager) CurrentChoice() (Destination, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.hasChoice {
+		return Destination{}, false
+	}
+	return m.choice, true
+}
+
+func (m *Manager) record(f folder.Folder, choice Destination) folder.Folder {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.current = f
+	m.choice = choice
+	m.hasChoice = true
 	return f
 }
 

@@ -8,11 +8,31 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Added
 
+- **PC desktop app** (`pc/`) — a Flutter Windows companion that finds the running agent from its
+  `pairing.json` handoff file and talks to it over pinned HTTPS. The Pairing tab shows the live
+  one-time code and QR (with expiry countdown and a "show a new code" button); the Storage tab
+  lists the PC's drives with capacity, filesystem and removable/network flags and sets the backup
+  destination. The app polls the agent every few seconds, so a phone redeeming the code flips the
+  screen from "Waiting for phone" to "Phone paired" without a restart. Built with
+  `flutter build windows`.
+- **Loopback-only local API** in the agent — `GET /local/status`, `POST /local/pairing/refresh`,
+  `GET /local/volumes` and `PUT /local/destination` back the desktop app. These routes require no
+  device token (the app is the local user), but a socket-peer check rejects any request not coming
+  from loopback with `403 LOCAL_ONLY` — a paired phone cannot mint codes or repoint the backup
+  folder. Issuing and refreshing the displayed code now share one `pairingSession`, so the QR,
+  `pairing.json`, `pairing.png` and the code the API reports can never disagree.
 - **The Windows installer can set up the Flutter SDK.** An optional task (checked by default)
   downloads the pinned Flutter 3.47.8 Windows archive (~1.9 GB), extracts it to
-  `%LOCALAPPDATA%\CloudBox\flutter` and adds its `bin` to the user `PATH`, so the Android app can
-  be built on that PC. The agent itself never needs Flutter — the SDK is a developer convenience,
-  fetched on demand rather than bundled, and removed again on uninstall.
+  `%LOCALAPPDATA%\CloudBox\flutter` and adds its `bin` to the user `PATH`, so the Android and PC
+  apps can be built on that PC. The agent itself never needs Flutter — the SDK is a developer
+  convenience, fetched on demand rather than bundled, and removed again on uninstall.
+
+### Changed
+
+- `eng/version.ps1` now generates `pc/lib/core/gen/version.dart` alongside the agent and Android
+  version files, so the desktop app carries the same five-part version string.
+- `cloudbox serve` prints the actual `--addr` it bound in its startup banner instead of always
+  claiming `0.0.0.0`.
 
 ## [0.01.15.11.26] — 2026-11-15
 

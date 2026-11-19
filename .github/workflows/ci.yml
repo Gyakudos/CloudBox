@@ -108,6 +108,39 @@ jobs:
           path: dist/*.apk
           if-no-files-found: error
 
+  pc:
+    name: app (flutter windows)
+    # Validation only for now: the desktop app is not a release artifact yet. Building it here
+    # keeps the new project from silently rotting (Windows scaffolding and native toolchain).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Same pin as the Android app: reproducible analysis across both Flutter surfaces.
+          flutter-version: '3.47.8'
+          cache: true
+
+      - name: Verify generated version artifacts
+        run: pwsh -NoProfile -File eng/version.ps1 -Check
+
+      - name: Resolve dependencies
+        working-directory: pc
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: pc
+        run: flutter analyze
+
+      - name: Test
+        working-directory: pc
+        run: flutter test
+
+      - name: Build Windows executable
+        working-directory: pc
+        run: flutter build windows
+
   windows-installer:
     name: installer (windows)
     runs-on: windows-latest

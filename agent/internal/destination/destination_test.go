@@ -76,6 +76,60 @@ func TestSetUsesNamedSubfolder(t *testing.T) {
 	}
 }
 
+func TestCurrentChoiceTracksAdoptAndSet(t *testing.T) {
+	vols := testVolumes(t)
+	mgr, _ := newManager(t, vols)
+
+	if _, ok := mgr.CurrentChoice(); ok {
+		t.Fatal("CurrentChoice = ok before any destination was adopted")
+	}
+
+	adopted, err := mgr.Adopt(filepath.Join(t.TempDir(), "CloudBox"), "CloudBox")
+	if err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	choice, ok := mgr.CurrentChoice()
+	if !ok {
+		t.Fatal("CurrentChoice = !ok after Adopt")
+	}
+	if choice.Root != adopted.Root || choice.Volume != "" || choice.Subfolder != "CloudBox" {
+		t.Fatalf("choice after Adopt = %+v", choice)
+	}
+
+	if _, err := mgr.Set("E:", "Backups"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	choice, ok = mgr.CurrentChoice()
+	if !ok {
+		t.Fatal("CurrentChoice = !ok after Set")
+	}
+	if choice.Volume != "E:" || choice.Subfolder != "Backups" || choice.Root == adopted.Root {
+		t.Fatalf("choice after Set = %+v", choice)
+	}
+}
+
+func TestCurrentChoiceRestoresPersistedVolume(t *testing.T) {
+	vols := testVolumes(t)
+	registry := folder.NewRegistry()
+	dir := t.TempDir()
+	mgr := New(dir, registry, vols, safepath.DefaultPolicy())
+	if _, err := mgr.Set("E:", "Backups"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	restored := New(dir, folder.NewRegistry(), vols, safepath.DefaultPolicy())
+	if _, ok, err := restored.Restore(); err != nil || !ok {
+		t.Fatalf("Restore: ok=%v err=%v", ok, err)
+	}
+	choice, ok := restored.CurrentChoice()
+	if !ok {
+		t.Fatal("CurrentChoice = !ok after Restore")
+	}
+	if choice.Volume != "E:" || choice.Subfolder != "Backups" {
+		t.Fatalf("restored choice = %+v", choice)
+	}
+}
+
 func TestSetRejectsUnknownVolume(t *testing.T) {
 	mgr, _ := newManager(t, testVolumes(t))
 

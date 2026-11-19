@@ -33,19 +33,25 @@ const maxBodyBytes = 64 << 10
 // Options configures a Server. Identity, Pairing and Devices are required. Blobs and Folders
 // are required for the upload endpoints; when Blobs is nil those routes are not registered.
 type Options struct {
-	Identity   *identity.Identity
-	Pairing    *pairing.Manager
-	Devices    *devices.Store
-	Blobs      *blob.Store
-	Folders    *folder.Registry
-	Volumes    func() ([]volume.Volume, error)
+	Identity *identity.Identity
+	Pairing  *pairing.Manager
+	Devices  *devices.Store
+	Blobs    *blob.Store
+	Folders  *folder.Registry
+	Volumes  func() ([]volume.Volume, error)
 	// SetDestination resolves a volume the phone picked into the default sync folder. Nil
 	// disables the destination endpoint.
 	SetDestination func(volumeName, subfolder string) (folder.Folder, error)
-	ServerName     string
-	Version        string
-	StartedAt      time.Time
-	Logger         *slog.Logger
+
+	// LocalState and LocalRefresh enable the loopback-only /local/* routes used by the PC-side
+	// desktop app. Nil leaves them unregistered. See local.go for why they are unauthenticated.
+	LocalState   func() LocalState
+	LocalRefresh func() (LocalState, error)
+
+	ServerName string
+	Version    string
+	StartedAt  time.Time
+	Logger     *slog.Logger
 }
 
 // Server serves the agent HTTP API.
@@ -85,6 +91,19 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle("PATCH /v1/uploads/{id}", s.requireDevice(http.HandlerFunc(s.handleAppendUpload)))
 		mux.Handle("GET /v1/uploads/{id}", s.requireDevice(http.HandlerFunc(s.handleUploadStatus)))
 		mux.Handle("POST /v1/uploads/{id}/commit", s.requireDevice(http.HandlerFunc(s.handleCommitUpload)))
+	}
+
+	if s.opts.LocalState != nil {
+		local := http.NewServeMux()
+		local.HandleFunc("GET /status", s.handleLocalStatus)
+		if s.opts.LocalRefresh != nil {
+			local.HandleFunc("POST /pairing/refresh", s.handleLocalRefresh)
+		}
+		local.HandleFunc("GET /volumes", s.handleVolumes)
+		if s.opts.SetDestination != nil {
+			local.HandleFunc("PUT /destination", s.handleLocalSetDestination)
+		}
+		mux.Handle("/local/", s.requireLoopback(http.StripPrefix("/local", local)))
 	}
 
 	return s.observe(mux)
