@@ -56,6 +56,29 @@ LocalState _state() => LocalState(
       qrPngBase64: '',
     );
 
+// Two valid 1x1 PNGs. The QR widget decodes base64 into a MemoryImage provider; these let a test
+// assert that polling rebuilds reuse the provider while a refreshed code replaces it.
+const _whitePixel =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY/j///9/AAn7A/0FQ0XKAAAAAElFTkSuQmCC';
+const _blackPixel =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAANSURBVBhXY2BgYPgPAAEEAQBwIGULAAAAAElFTkSuQmCC';
+
+LocalState _stateWithQr(String qr) => LocalState(
+      serverName: 'MY-PC',
+      serverId: '0123456789abcdef',
+      version: '0.01.15.11.26',
+      pin: 'pin',
+      endpoints: const ['127.0.0.1:8443'],
+      pairing: LocalPairing(
+        token: 'one-time-token',
+        expiresAt: DateTime.now().add(const Duration(minutes: 4)),
+        active: true,
+      ),
+      destination: null,
+      payload: '{}',
+      qrPngBase64: qr,
+    );
+
 final List<VolumeInfo> _volumes = [
   const VolumeInfo(
     name: 'C:',
@@ -111,6 +134,32 @@ void main() {
     ));
 
     expect(find.text('Phone paired'), findsOneWidget);
+  });
+
+  testWidgets('QR image survives countdown and poll rebuilds without reloading', (tester) async {
+    Widget build(LocalState state) => MaterialApp(
+          home: PairingScreen(
+            state: state,
+            error: null,
+            refreshing: false,
+            onRefresh: () {},
+          ),
+        );
+
+    await tester.pumpWidget(build(_stateWithQr(_whitePixel)));
+    await tester.pumpAndSettle();
+    final initial = tester.widget<Image>(find.byType(Image)).image;
+
+    // A status poll replaces the state object but the QR bytes are identical. The provider must
+    // be the same instance or the image cache misses and the QR visibly flashes.
+    await tester.pumpWidget(build(_stateWithQr(_whitePixel)));
+    await tester.pump();
+    expect(tester.widget<Image>(find.byType(Image)).image, same(initial));
+
+    // Refreshing the code genuinely changes the image.
+    await tester.pumpWidget(build(_stateWithQr(_blackPixel)));
+    await tester.pump();
+    expect(tester.widget<Image>(find.byType(Image)).image, isNot(same(initial)));
   });
 
   testWidgets('storage screen sends the chosen drive and folder to the agent', (tester) async {

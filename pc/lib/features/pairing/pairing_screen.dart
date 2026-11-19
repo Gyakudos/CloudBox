@@ -131,24 +131,54 @@ class _PairingScreenState extends State<PairingScreen> {
   }
 }
 
-class _QrImage extends StatelessWidget {
+class _QrImage extends StatefulWidget {
   const _QrImage({required this.data});
 
   final String data;
 
   @override
-  Widget build(BuildContext context) {
-    Widget content;
-    if (data.isEmpty) {
-      content = const Icon(Icons.qr_code_2, size: 96);
-    } else {
-      try {
-        final bytes = Uint8List.fromList(base64.decode(data));
-        content = Image.memory(bytes, width: 248, height: 248, fit: BoxFit.contain);
-      } on FormatException {
-        content = const Icon(Icons.qr_code_2, size: 96);
-      }
+  State<_QrImage> createState() => _QrImageState();
+}
+
+class _QrImageState extends State<_QrImage> {
+  // The parent rebuilds every second for the countdown and every few seconds for status polls.
+  // Decoding the PNG on each of those builds produced a fresh Uint8List, and therefore a fresh
+  // MemoryImage cache key, which made Flutter briefly show an empty frame. Keep one provider and
+  // replace it only when the agent actually issues a new code.
+  MemoryImage? _image;
+
+  @override
+  void initState() {
+    super.initState();
+    _decode();
+  }
+
+  @override
+  void didUpdateWidget(_QrImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.data != oldWidget.data) {
+      _decode();
     }
+  }
+
+  void _decode() {
+    if (widget.data.isEmpty) {
+      _image = null;
+      return;
+    }
+    try {
+      _image = MemoryImage(Uint8List.fromList(base64.decode(widget.data)));
+    } on FormatException {
+      _image = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _image;
+    final content = image == null
+        ? const Icon(Icons.qr_code_2, size: 96)
+        : Image(image: image, width: 248, height: 248, fit: BoxFit.contain);
     return Container(
       width: 272,
       height: 272,
