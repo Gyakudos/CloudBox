@@ -39,15 +39,21 @@ type LocalState struct {
 	Version     string                   `json:"version"`
 	Pin         string                   `json:"pin"`
 	Endpoints   []string                 `json:"endpoints"`
+	StartedAt   time.Time                `json:"started_at"`
 	Pairing     LocalPairing             `json:"pairing"`
 	Destination *destination.Destination `json:"destination"`
 	Payload     string                   `json:"payload"`
 	QRPNGBase64 string                   `json:"qr_png_base64"`
 }
 
+func (s *Server) localState(state LocalState) LocalState {
+	// The pairing session does not own the process start time; the server does.
+	state.StartedAt = s.opts.StartedAt
+	return state
+}
+
 func (s *Server) handleLocalStatus(w http.ResponseWriter, _ *http.Request) {
-	state := s.opts.LocalState()
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, s.localState(s.opts.LocalState()))
 }
 
 func (s *Server) handleLocalRefresh(w http.ResponseWriter, _ *http.Request) {
@@ -57,7 +63,17 @@ func (s *Server) handleLocalRefresh(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusInternalServerError, "INTERNAL", "could not create a new pairing code")
 		return
 	}
-	writeJSON(w, http.StatusOK, state)
+	writeJSON(w, http.StatusOK, s.localState(state))
+}
+
+func (s *Server) handleLocalLogs(w http.ResponseWriter, _ *http.Request) {
+	lines := s.opts.LocalLogs()
+	if lines == nil {
+		lines = []string{}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Lines []string `json:"lines"`
+	}{Lines: lines})
 }
 
 func (s *Server) handleLocalSetDestination(w http.ResponseWriter, r *http.Request) {

@@ -285,6 +285,7 @@ class LocalState {
     required this.version,
     required this.pin,
     required this.endpoints,
+    this.startedAt,
     required this.pairing,
     required this.destination,
     required this.payload,
@@ -300,6 +301,7 @@ class LocalState {
       version: json['version'] as String? ?? '',
       pin: json['pin'] as String? ?? '',
       endpoints: (json['endpoints'] as List?)?.whereType<String>().toList() ?? const <String>[],
+      startedAt: DateTime.tryParse(json['started_at'] as String? ?? ''),
       pairing: pairingJson is Map
           ? LocalPairing.fromJson(pairingJson.cast<String, dynamic>())
           : LocalPairing(token: '', expiresAt: DateTime.now(), active: false),
@@ -314,6 +316,7 @@ class LocalState {
   final String version;
   final String pin;
   final List<String> endpoints;
+  final DateTime? startedAt;
   final LocalPairing pairing;
   final DestinationInfo? destination;
   final String payload;
@@ -325,6 +328,7 @@ class LocalState {
         version: version,
         pin: pin,
         endpoints: endpoints,
+        startedAt: startedAt,
         pairing: value,
         destination: destination,
         payload: payload,

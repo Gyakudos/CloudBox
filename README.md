@@ -146,12 +146,15 @@ Or, from the repository root, `pwsh eng/build-apk.ps1` stages the APK as
 `dist/cloudbox-<version>.apk`. The Android `versionName`/`versionCode` are read straight from
 `VERSION` in `android/app/build.gradle.kts`; see `app/README.md` for the details.
 
-**PC desktop app** — a Flutter Windows companion with four tabs: **Pairing** (live code/QR),
+**PC desktop app** — a Flutter Windows companion with five tabs: **Pairing** (live code/QR),
 **Storage** (the default drive), **Paired Devices** (add, remove, and set a backup folder for each
-phone), and **Backups** (where each device currently writes). The **Update** button in the header
-checks GitHub Releases for a newer build. It finds the agent from `%APPDATA%\CloudBox\pairing.json`
-and uses its loopback-only `/local/*` API over pinned HTTPS, so no phone token is involved. Paired
-devices and their per-device folders are persisted in `%APPDATA%\CloudBox\devices.json`.
+phone), **Backups** (where each device currently writes), and **Agent** (service status and a live
+tail of the agent log). The **Update** button in the header checks GitHub Releases for a newer
+build. Opening the app starts `cloudbox.exe serve` hidden if it is not already running, so a single
+desktop shortcut brings up both; closing the window leaves the agent running so phones can keep
+backing up. It finds the agent from `%APPDATA%\CloudBox\pairing.json` and uses its loopback-only
+`/local/*` API over pinned HTTPS, so no phone token is involved. Paired devices and their
+per-device folders are persisted in `%APPDATA%\CloudBox\devices.json`.
 
 ```sh
 cd pc
@@ -174,8 +177,9 @@ The installer writes the agent to `%LOCALAPPDATA%\Programs\CloudBox` and the Flu
 `pc` subfolder. The optional **desktop shortcuts** task adds **CloudBox** (the desktop app) and
 **CloudBox Agent** (the `serve` console) to the desktop. It also registers an optional autostart
 entry under `HKCU` and offers a firewall rule when run as an administrator. Running **CloudBox**
-from the Start Menu opens the desktop app; **CloudBox Agent** opens a console with a fresh pairing
-code. The autostart entry launches the agent hidden.
+from the Start Menu or the desktop opens the desktop app, which starts the agent hidden if needed
+and shows its status and logs in the **Agent** tab. **CloudBox Agent** still opens the raw console
+for debugging. The autostart entry launches the agent hidden at sign-in.
 
 It also offers an optional **Flutter SDK** task (checked by default): it downloads the pinned
 Flutter 3.47.8 Windows archive (~1.9 GB) from Google's release bucket, extracts it to

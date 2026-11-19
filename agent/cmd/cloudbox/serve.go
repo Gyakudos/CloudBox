@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
 	"github.com/Gyakudos/CloudBox/agent/internal/folder"
 	"github.com/Gyakudos/CloudBox/agent/internal/identity"
+	"github.com/Gyakudos/CloudBox/agent/internal/logbuf"
 	"github.com/Gyakudos/CloudBox/agent/internal/mdns"
 	"github.com/Gyakudos/CloudBox/agent/internal/pairing"
 	"github.com/Gyakudos/CloudBox/agent/internal/safepath"
@@ -44,7 +46,13 @@ func runServe(args []string) int {
 		return 2
 	}
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Keep a bounded copy of the log lines so the PC app can show them in its Agent tab without
+	// opening a second console window. stderr still gets everything, for the terminal shortcut.
+	logs := logbuf.New(logbuf.DefaultLimit)
+	logger := slog.New(slog.NewTextHandler(
+		io.MultiWriter(os.Stderr, logs),
+		&slog.HandlerOptions{Level: slog.LevelInfo},
+	))
 	slog.SetDefault(logger)
 
 	ident, err := identity.LoadOrCreate(*dir)
@@ -135,6 +143,7 @@ func runServe(args []string) int {
 		// token, over routes guarded to loopback connections (see api/local.go).
 		LocalState:   func() api.LocalState { return session.state(destinations) },
 		LocalRefresh: func() (api.LocalState, error) { return session.refresh(destinations) },
+		LocalLogs:    logs.Lines,
 		ListDevices:  func() []devices.Device { return deviceStore.List() },
 		RevokeDevice: func(id string) error {
 			_, err := deviceStore.RevokeWithError(id)

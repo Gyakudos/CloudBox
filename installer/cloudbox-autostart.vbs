@@ -1,8 +1,9 @@
 ' CloudBox — start the PC agent at sign-in without leaving a console window open.
 '
 ' Installed next to cloudbox.exe by cloudbox-setup-*.exe. The Windows "Run" entry points here,
-' which finds the agent beside this script and launches `cloudbox serve` hidden. To watch the
-' agent and read a fresh pairing code, start "CloudBox" from the Start Menu instead.
+' which finds the agent beside this script and launches `cloudbox serve` hidden. The PC app uses
+' this same launcher when it needs to start the agent itself. To watch the agent, open the Agent
+' tab in "CloudBox", or start "CloudBox Agent" for the raw console.
 Option Explicit
 
 Dim fso, shell, here, exe

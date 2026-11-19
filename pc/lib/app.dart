@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'core/agent_launcher.dart';
 import 'core/config.dart';
 import 'core/gen/version.dart';
 import 'core/local_api.dart';
 import 'core/models.dart';
+import 'features/agent/agent_screen.dart';
 import 'features/backups/backups_screen.dart';
 import 'features/devices/paired_devices_screen.dart';
 import 'features/pairing/pairing_screen.dart';
@@ -40,6 +42,7 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
   LocalAgentApi? _api;
   LocalState? _state;
   List<VolumeInfo> _volumes = const [];
+  List<String> _logs = const [];
   String? _configError;
   String? _pollError;
   bool _initializing = true;
@@ -62,11 +65,25 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
     super.dispose();
   }
 
+  /// Starts the agent if needed, then binds the app to a live local endpoint.
   Future<void> _connect() async {
+    if (mounted) {
+      setState(() {
+        _initializing = true;
+        _configError = null;
+      });
+    }
     try {
-      final config = readAgentConfig();
-      _api = PinnedLocalAgentApi(config);
-      await Future.wait([_poll(), _loadVolumes()]);
+      final config = await ensureLocalAgent();
+      if (config == null) {
+        throw const ConfigException(
+          'Could not start the CloudBox agent. Open CloudBox Agent from the Start Menu to see why it failed.',
+        );
+      }
+      _api?.close();
+      final api = PinnedLocalAgentApi(config);
+      _api = api;
+      await Future.wait([_poll(), _loadVolumes(), _loadLogs()]);
     } on ConfigException catch (error) {
       if (mounted) setState(() => _configError = error.message);
     } finally {
@@ -82,10 +99,17 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
     _polling = true;
     try {
       final state = await api.status();
+      List<String>? logs;
+      try {
+        logs = await api.logs();
+      } on Object {
+        // A failed log fetch must not blank out the status the app already has.
+      }
       if (!mounted) return;
       setState(() {
         _state = state;
         _pollError = null;
+        if (logs != null) _logs = logs;
       });
     } on CloudBoxException catch (error) {
       if (!mounted) return;
@@ -137,6 +161,17 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
     }
   }
 
+  Future<void> _loadLogs() async {
+    final api = _api;
+    if (api == null) return;
+    try {
+      final logs = await api.logs();
+      if (mounted) setState(() => _logs = logs);
+    } on Object {
+      // The status poll surfaces connectivity problems; keep whatever log tail we last had.
+    }
+  }
+
   /// Explicit retry from the UI: mint a fresh code so a used or expired one never leaves the
   /// user staring at a dead QR.
   Future<void> _retry() async {
@@ -185,6 +220,7 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
               NavigationRailDestination(icon: Icon(Icons.storage_outlined), selectedIcon: Icon(Icons.storage), label: Text('Storage')),
               NavigationRailDestination(icon: Icon(Icons.devices_other_outlined), selectedIcon: Icon(Icons.devices_other), label: Text('Paired Devices')),
               NavigationRailDestination(icon: Icon(Icons.backup_outlined), selectedIcon: Icon(Icons.backup), label: Text('Backups')),
+              NavigationRailDestination(icon: Icon(Icons.terminal_outlined), selectedIcon: Icon(Icons.terminal), label: Text('Agent')),
             ],
           ),
           const VerticalDivider(width: 1),
@@ -218,6 +254,17 @@ class _CloudBoxHomeState extends State<CloudBoxHome> {
   }
 
   Widget _body() {
+    // The Agent tab is useful even when the agent is down: it explains what happened and offers
+    // a retry, so it must render before the generic "could not connect" body below.
+    if (_selected == 4) {
+      return AgentScreen(
+        state: _state,
+        logs: _logs,
+        error: _configError ?? _pollError,
+        starting: _initializing,
+        onStart: _initializing ? () {} : _connect,
+      );
+    }
     if (_initializing) {
       return const Center(child: CircularProgressIndicator());
     }

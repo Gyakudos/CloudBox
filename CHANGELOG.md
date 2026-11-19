@@ -10,6 +10,20 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.03.19.11.26] — 2026-11-19
+
+A single desktop shortcut now starts the agent and the PC app together in one window, with an Agent
+tab for status and live logs.
+
+### Added
+
+- **One-click agent + app** — opening the PC app now starts `cloudbox.exe serve` hidden if it is not
+  already running, so the **CloudBox** desktop shortcut brings up both in one window. Closing the
+  window leaves the agent running for phone backups.
+- **Agent tab** — the desktop app shows service status and a bounded live tail of the agent log,
+  fetched from a new loopback-only `GET /local/logs` endpoint. Successful status/log polls are no
+  longer logged at INFO, so the tail stays useful.
+
 ## [0.02.19.11.26] — 2026-11-19
 
 The Windows installer now ships the PC companion app and can place shortcuts for it and the agent

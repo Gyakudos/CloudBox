@@ -27,6 +27,8 @@ class CloudBoxException implements Exception {
 abstract class LocalAgentApi {
   Future<LocalState> status();
   Future<LocalState> refreshPairing();
+  /// The agent's most recent log lines, oldest first, for the Agent tab.
+  Future<List<String>> logs();
   Future<List<VolumeInfo>> volumes();
   Future<SelectedFolder> setDestination({
     required String volume,
@@ -80,6 +82,13 @@ class PinnedLocalAgentApi implements LocalAgentApi {
   @override
   Future<LocalState> refreshPairing() async {
     return LocalState.fromJson(await _request('POST', '/local/pairing/refresh'));
+  }
+
+  @override
+  Future<List<String>> logs() async {
+    final json = await _request('GET', '/local/logs');
+    final list = json['lines'] as List? ?? const [];
+    return list.whereType<String>().toList(growable: false);
   }
 
   @override
@@ -191,8 +200,8 @@ class PinnedLocalAgentApi implements LocalAgentApi {
         );
       }
       throw CloudBoxException(
-        'Could not reach the CloudBox agent on this PC. Start it from the Start Menu or '
-        'desktop shortcut, then try again. ($error)',
+        'Could not reach the CloudBox agent on this PC. Reopen CloudBox to try starting it '
+        'again, or launch CloudBox Agent from the Start Menu. ($error)',
       );
     }
 

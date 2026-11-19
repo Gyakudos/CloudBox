@@ -3,4 +3,4 @@
 package version
 
 // generatedVersion is the release version encoded in VERSION.
-const generatedVersion = "0.02.19.11.26"
+const generatedVersion = "0.03.19.11.26"

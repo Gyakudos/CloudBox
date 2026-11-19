@@ -118,6 +118,7 @@ func newLocalHarness(t *testing.T, withLocal bool) *localHarness {
 			h.refreshed++
 			return opts.LocalState(), nil
 		}
+		opts.LocalLogs = func() []string { return []string{"first line", "second line"} }
 	}
 	h.handler = api.New(opts).Handler()
 	return h
@@ -146,6 +147,7 @@ func TestLocalRoutesRejectNonLoopback(t *testing.T) {
 	}{
 		{http.MethodGet, "/local/status"},
 		{http.MethodPost, "/local/pairing/refresh"},
+		{http.MethodGet, "/local/logs"},
 		{http.MethodGet, "/local/volumes"},
 		{http.MethodPut, "/local/destination"},
 		{http.MethodGet, "/local/devices"},
@@ -196,6 +198,29 @@ func TestLocalStatusNeedsNoDeviceToken(t *testing.T) {
 	}
 }
 
+func TestLocalLogsReturnsBufferedLines(t *testing.T) {
+	h := newLocalHarness(t, true)
+	rec := h.request(http.MethodGet, "/local/logs", "127.0.0.1:5151", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Lines []string `json:"lines"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	want := []string{"first line", "second line"}
+	if len(body.Lines) != len(want) {
+		t.Fatalf("lines = %q, want %q", body.Lines, want)
+	}
+	for i := range want {
+		if body.Lines[i] != want[i] {
+			t.Fatalf("lines[%d] = %q, want %q", i, body.Lines[i], want[i])
+		}
+	}
+}
+
 func TestLocalRefreshCallsSession(t *testing.T) {
 	h := newLocalHarness(t, true)
 	rec := h.request(http.MethodPost, "/local/pairing/refresh", "127.0.0.1:5151", nil)
@@ -243,7 +268,7 @@ func TestLocalVolumesAndDestination(t *testing.T) {
 
 func TestLocalRoutesAbsentWithoutLocalState(t *testing.T) {
 	h := newLocalHarness(t, false)
-	for _, path := range []string{"/local/status", "/local/volumes"} {
+	for _, path := range []string{"/local/status", "/local/logs", "/local/volumes"} {
 		rec := h.request(http.MethodGet, path, "127.0.0.1:5151", nil)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s: status = %d, want 404", path, rec.Code)

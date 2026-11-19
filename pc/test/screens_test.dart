@@ -37,6 +37,9 @@ class FakeApi implements LocalAgentApi {
   }
 
   @override
+  Future<List<String>> logs() async => const ['agent ready'];
+
+  @override
   Future<List<VolumeInfo>> volumes() async => available;
 
   @override

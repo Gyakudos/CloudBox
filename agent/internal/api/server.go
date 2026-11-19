@@ -47,6 +47,9 @@ type Options struct {
 	// desktop app. Nil leaves them unregistered. See local.go for why they are unauthenticated.
 	LocalState   func() LocalState
 	LocalRefresh func() (LocalState, error)
+	// LocalLogs returns the most recent agent log lines, oldest first. Nil leaves /local/logs
+	// unregistered. The buffer lives in serve.go; the API only exposes it over loopback.
+	LocalLogs func() []string
 
 	// The device-management callbacks back the /local/devices and /local/backups routes. They
 	// are supplied by serve.go, which owns the persisted device store and folder registry.
@@ -109,6 +112,9 @@ func (s *Server) Handler() http.Handler {
 		if s.opts.LocalRefresh != nil {
 			local.HandleFunc("POST /pairing/refresh", s.handleLocalRefresh)
 		}
+		if s.opts.LocalLogs != nil {
+			local.HandleFunc("GET /logs", s.handleLocalLogs)
+		}
 		local.HandleFunc("GET /volumes", s.handleVolumes)
 		if s.opts.SetDestination != nil {
 			local.HandleFunc("PUT /destination", s.handleLocalSetDestination)
@@ -124,6 +130,12 @@ func (s *Server) Handler() http.Handler {
 }
 
 // ---------------------------------------------------------------------------- middleware
+
+// isPolledRoute identifies the high-frequency local reads the PC UI makes. Only successful
+// requests are quieted; failures still show up at INFO in the Agent tab.
+func isPolledRoute(method, path string) bool {
+	return method == http.MethodGet && (path == "/local/status" || path == "/local/logs")
+}
 
 type deviceContextKey struct{}
 
@@ -187,7 +199,13 @@ func (s *Server) observe(next http.Handler) http.Handler {
 					"panic", recovered, "stack", string(debug.Stack()))
 				writeError(recorder, http.StatusInternalServerError, "INTERNAL", "internal error")
 			}
-			s.opts.Logger.Info("request",
+			level := slog.LevelInfo
+			if recorder.status == http.StatusOK && isPolledRoute(r.Method, r.URL.Path) {
+				// The PC app polls these every few seconds. Logging them at INFO would push
+				// everything interesting out of the Agent tab's 200-line log tail.
+				level = slog.LevelDebug
+			}
+			s.opts.Logger.Log(r.Context(), level, "request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", recorder.status,
