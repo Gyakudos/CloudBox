@@ -8,6 +8,28 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Added
 
+### Fixed
+
+## [0.01.19.11.26] — 2026-11-19
+
+The PC app grows Paired Devices and Backups tabs, both apps can check GitHub for updates,
+Android can scan the pairing QR, and each paired phone gets its own persisted backup folder.
+
+### Added
+
+- **Multiple paired devices with per-device backups** — the agent persists its device registry to
+  `<data dir>\devices.json` (token hashes only) and gives every phone its own backup folder. The
+  PC app's new **Paired Devices** tab lists phones, mints a fresh code to add another, revokes
+  devices, and sets each device's drive/subfolder; the **Backups** tab shows where each device
+  currently writes and whether that drive is available. Uploads are pinned to the authenticated
+  device's folder, and the Android drive picker updates that device rather than the global default.
+- **QR scanning on Android** — the Pair screen can now scan the code shown by the PC app with the
+  camera (`mobile_scanner`), with a duplicate-scan guard and clear parse errors. Pasting still works.
+- **Update buttons on both apps** — a header action queries the GitHub Releases list (not
+  `/releases/latest`, because every build is a pre-release), compares the date-stamped version, and
+  opens the platform's `.apk`/`.exe` or release page in the browser.
+- **New app icon** — a blue cloud-and-box glyph generated from `brand/make_icons.py`, applied to
+  Android mipmaps and the Windows executable/icon resources.
 - **PC desktop app** (`pc/`) — a Flutter Windows companion that finds the running agent from its
   `pairing.json` handoff file and talks to it over pinned HTTPS. The Pairing tab shows the live
   one-time code and QR (with expiry countdown and a "show a new code" button); the Storage tab
@@ -29,6 +51,9 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Changed
 
+- The local API adds `GET /local/devices`, `DELETE /local/devices/{id}`,
+  `PUT /local/devices/{id}/backup` and `GET /local/backups`, all guarded by the existing loopback
+  check. A missing device returns `404 DEVICE_NOT_FOUND`.
 - `eng/version.ps1` now generates `pc/lib/core/gen/version.dart` alongside the agent and Android
   version files, so the desktop app carries the same five-part version string.
 - `cloudbox serve` prints the actual `--addr` it bound in its startup banner instead of always
