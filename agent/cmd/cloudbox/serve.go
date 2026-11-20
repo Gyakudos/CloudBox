@@ -262,13 +262,20 @@ func registerBackupFolder(folders *folder.Registry, cfg devices.BackupConfig) (f
 	return selected, nil
 }
 
+type backupUpdater func(id, volume, subfolder string, enabled bool) (devices.Device, error)
+
 // followDestination re-points every paired device's backup at the destination just chosen in the
 // PC app. Failures are logged and skipped: one removed or unplugged device must not fail the
 // global setting for everyone else, though it may keep uploading to its old folder until it is
 // reachable again.
 func followDestination(store *devices.Store, folders *folder.Registry, logger *slog.Logger, volume, subfolder string) {
+	followDestinationWith(store, folders, logger, volume, subfolder, store.UpdateBackup)
+}
+
+// followDestinationWith is the seam the tests use to avoid depending on the CI machine's drives.
+func followDestinationWith(store *devices.Store, folders *folder.Registry, logger *slog.Logger, volume, subfolder string, update backupUpdater) {
 	for _, device := range store.List() {
-		updated, err := store.UpdateBackup(device.ID, volume, subfolder, true)
+		updated, err := update(device.ID, volume, subfolder, true)
 		if err != nil {
 			logger.Warn("could not update device backup after destination change",
 				"device_id", device.ID, "err", err)

@@ -10,6 +10,14 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.06.20.11.26] — 2026-11-20
+
+Re-release of the PC-configured destination fix with a CI-compatible test.
+
+### Fixed
+
+- Made the destination-propagation test independent of the CI machine's drives.
+
 ## [0.05.20.11.26] — 2026-11-20
 
 The destination is now configured once on the PC instead of on every phone.

@@ -3,13 +3,12 @@ package main
 import (
 	"io"
 	"log/slog"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Gyakudos/CloudBox/agent/internal/devices"
 	"github.com/Gyakudos/CloudBox/agent/internal/folder"
-	"github.com/Gyakudos/CloudBox/agent/internal/volume"
 )
 
 func TestDisplayAddr(t *testing.T) {
@@ -31,13 +30,9 @@ func TestDisplayAddr(t *testing.T) {
 }
 
 // A destination chosen on the PC must reach every paired phone: the phone no longer picks a drive
-// itself, so the PC's Storage screen is the only place that can move its backup folder.
+// itself, so the PC's Storage screen is the only place that can move its backup folder. The updater
+// is injected so the test does not depend on which drives the CI machine happens to have.
 func TestFollowDestination(t *testing.T) {
-	vols, err := volume.List()
-	if err != nil || len(vols) == 0 {
-		t.Skip("no volumes available to resolve a backup destination")
-	}
-
 	store := devices.NewStore()
 	phone, _, err := store.Create("Pixel", "android", "test")
 	if err != nil {
@@ -45,9 +40,18 @@ func TestFollowDestination(t *testing.T) {
 	}
 	folders := folder.NewRegistry()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	root := filepath.Join(t.TempDir(), "CloudBoxFollowTest")
 
-	subfolder := "CloudBoxFollowTest"
-	followDestination(store, folders, logger, vols[0].Name, subfolder)
+	update := func(id, volume, subfolder string, enabled bool) (devices.Device, error) {
+		return store.SetBackupConfig(id, devices.BackupConfig{
+			FolderID:  devices.BackupFolderID(id),
+			Volume:    volume,
+			Subfolder: subfolder,
+			Root:      root,
+			Enabled:   enabled,
+		})
+	}
+	followDestinationWith(store, folders, logger, "TestVolume", "CloudBoxFollowTest", update)
 
 	updated, ok := store.Get(phone.ID)
 	if !ok {
@@ -59,11 +63,9 @@ func TestFollowDestination(t *testing.T) {
 	if updated.Backup.FolderID != devices.BackupFolderID(phone.ID) {
 		t.Fatalf("folder id = %q, want %q", updated.Backup.FolderID, devices.BackupFolderID(phone.ID))
 	}
-	if !strings.Contains(updated.Backup.Root, subfolder) {
-		t.Fatalf("backup root %q does not use subfolder %q", updated.Backup.Root, subfolder)
+	if !strings.Contains(updated.Backup.Root, "CloudBoxFollowTest") {
+		t.Fatalf("backup root %q does not use the chosen subfolder", updated.Backup.Root)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(updated.Backup.Root) })
-
 	if _, ok := folders.Get(updated.Backup.FolderID); !ok {
 		t.Fatal("updated backup folder was not registered for uploads")
 	}
