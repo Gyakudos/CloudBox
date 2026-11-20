@@ -46,8 +46,11 @@ generated or derived:
 | Go `version.Version` | `0.01.13.11.26` | `agent/internal/version/generated.go` |
 | Dart `kCloudBoxVersion` | `0.01.13.11.26` | `app/lib/core/gen/version.dart` |
 | Android `versionName` | `0.01.13.11.26` | read from `VERSION` by Gradle |
-| Android `versionCode` | `261113` | `YYMMDD` = `26 11 13` |
-| Dart `pubspec.yaml` version | `0.1.13+261113` | pub requires strict semver |
+| Android `versionCode` | `26111301` | `YYMMDDNN` = `26 11 13` + `01` |
+| Dart `pubspec.yaml` version | `0.1.13+26111301` | pub requires strict semver |
+
+Releases before `0.05.20.11.26` used plain `YYMMDD`; the minor counter was added so two
+pre-releases on the same day remain installable over one another.
 
 Generated files are produced by `eng/version.ps1`. CI runs `eng/version.ps1 -Check` and fails
 if a generated file has drifted from `VERSION`.
@@ -57,7 +60,8 @@ if a generated file has drifted from `VERSION`.
 **Good**
 
 - Build age is legible at a glance, in the tray, in logs, and in the app's About screen.
-- `versionCode` is monotonic without a separate counter to maintain, and sorts correctly.
+- `versionCode` is monotonic without a separate counter to maintain, and the trailing minor
+  digits let several releases share a day while still sorting correctly.
 - One file to edit per release; drift is caught by CI rather than by a user reporting a
   mismatched build.
 
@@ -66,10 +70,10 @@ if a generated file has drifted from `VERSION`.
 - The string does **not** sort lexicographically across month and year boundaries
   (`0.01.05.12.26` < `0.01.13.11.26` is false). Ordering authority is the git tag and
   `CHANGELOG.md`, not `sort`.
-- `versionCode` has day granularity, so **at most one installable release per day**. A second
-  build on the same day reuses the code and is not installable over the first. Pre-release
-  local builds must therefore use a distinct code (e.g. `+$versionCode` plus a hand-set
-  `--build-name`), or simply not be installed over a shipped build.
+- `versionCode` has day granularity plus two minor digits, so **at most 100 releases per day**
+  before the counter wraps. In practice a second build on the same day just increments `MINOR`.
+  A local build with the same `VERSION` still reuses the code and is not installable over a
+  shipped build; use a new `VERSION` if it needs to be installed side by side.
 - `MAJOR.MINOR` is nearly meaningless until v1; expect the date to do all the work.
 - Dart's `pubspec.yaml` cannot express the five-part version (pub enforces
   `major.minor.patch+build` with no leading zeros), so the authoritative string lives in the

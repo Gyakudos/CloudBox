@@ -69,7 +69,7 @@ try {
 }
 
 $releaseDateIso = $releaseDate.ToString('yyyy-MM-dd')
-$versionCode    = (($year % 100) * 10000) + ($month * 100) + $day   # YYMMDD
+$versionCode    = ((($year % 100) * 10000) + ($month * 100) + $day) * 100 + $minor   # YYMMDDNN
 $pubspecVersion = "$major.$minor.$day+$versionCode"                  # pub: major.minor.patch+build
 
 # --------------------------------------------------------------------------- render artifacts
@@ -94,7 +94,7 @@ $generatedDart = @(
     "/// Release date encoded in [kCloudBoxVersion].",
     "const String kCloudBoxReleaseDate = '$releaseDateIso';",
     "",
-    "/// Android versionCode derived from the release date (YYMMDD).",
+    "/// Android versionCode derived from the release date and minor counter (YYMMDDNN).",
     "const int kCloudBoxVersionCode = $versionCode;",
     "",
     "/// Version the Dart package toolchain can express (pub requires strict semver).",

@@ -3,13 +3,13 @@
 /// CloudBox release version, in MAJOR.MINOR.DD.MM.YY form.
 ///
 /// Source of truth: the repository's VERSION file.
-const String kCloudBoxVersion = '0.04.20.11.26';
+const String kCloudBoxVersion = '0.05.20.11.26';
 
 /// Release date encoded in [kCloudBoxVersion].
 const String kCloudBoxReleaseDate = '2026-11-20';
 
-/// Android versionCode derived from the release date (YYMMDD).
-const int kCloudBoxVersionCode = 261120;
+/// Android versionCode derived from the release date and minor counter (YYMMDDNN).
+const int kCloudBoxVersionCode = 26112005;
 
 /// Version the Dart package toolchain can express (pub requires strict semver).
-const String kCloudBoxPubspecVersion = '0.4.20+261120';
+const String kCloudBoxPubspecVersion = '0.5.20+26112005';

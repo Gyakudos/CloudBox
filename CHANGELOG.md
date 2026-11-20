@@ -10,6 +10,21 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.05.20.11.26] — 2026-11-20
+
+The destination is now configured once on the PC instead of on every phone.
+
+### Fixed
+
+- **Android no longer asks for a drive.** Pairing now opens the Send screen directly. The phone
+  uses the destination folder the agent reports during pairing, so users are no longer stuck on the
+  drive picker before they can send anything.
+- **PC Storage setting now reaches paired phones.** Changing the drive or folder in the CloudBox
+  Windows app updates every paired device's backup folder, so the setting made on the PC actually
+  takes effect on the phone.
+- **Same-day pre-releases are installable.** Android `versionCode` now includes the minor counter
+  (`YYMMDDNN`), so a second release on the same day can be installed over the first.
+
 ## [0.04.20.11.26] — 2026-11-20
 
 Android can now back up whole folders, recreating their subfolders on the PC.

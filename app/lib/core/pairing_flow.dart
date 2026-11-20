@@ -12,6 +12,24 @@ class PairingOutcome {
   final CloudBoxClient client;
   final PairingResult pairing;
   final ServerInfo info;
+
+  /// The backup destination the PC configured for this phone.
+  ///
+  /// The agent gives every paired device its own `backup-<device id>` folder and includes it in
+  /// `GET /v1/system/info`. Older agents may only expose the shared `default` folder, so fall back
+  /// to that, then to anything the agent advertised. The phone never picks a drive itself: the PC
+  /// app's Storage screen owns that choice.
+  CloudBoxFolder get destinationFolder {
+    final deviceFolderId = 'backup-${pairing.deviceId}';
+    for (final folder in info.folders) {
+      if (folder.id == deviceFolderId) return folder;
+    }
+    for (final folder in info.folders) {
+      if (folder.id == 'default') return folder;
+    }
+    if (info.folders.isNotEmpty) return info.folders.first;
+    return const CloudBoxFolder(id: 'default', name: 'CloudBox', root: '');
+  }
 }
 
 /// Pairs using [payload], then fetches the PC's info.

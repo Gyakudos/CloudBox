@@ -6,17 +6,15 @@ import '../core/models.dart';
 import '../core/pairing_flow.dart';
 import '../core/transfer.dart';
 
-/// Choose files and send them to the drive the user picked.
+/// Choose files and send them to the destination configured on the paired PC.
 ///
 /// The transfer itself lives in [TransferController]; this screen only turns taps into calls and
-/// renders the progress it reports.
+/// renders the progress it reports. There is no drive picker: the PC app's Storage screen owns
+/// that choice, and the agent told us the resulting folder during pairing.
 class SendScreen extends StatefulWidget {
-  const SendScreen({super.key, required this.outcome, required this.folder});
+  const SendScreen({super.key, required this.outcome});
 
   final PairingOutcome outcome;
-
-  /// The folder the PC resolved from the chosen drive (see the drive picker).
-  final CloudBoxFolder folder;
 
   @override
   State<SendScreen> createState() => _SendScreenState();
@@ -24,15 +22,17 @@ class SendScreen extends StatefulWidget {
 
 class _SendScreenState extends State<SendScreen> {
   late final TransferController _controller;
+  late final CloudBoxFolder _folder;
   bool _picking = false;
   bool _folderMode = false;
 
   @override
   void initState() {
     super.initState();
+    _folder = widget.outcome.destinationFolder;
     _controller = TransferController(
       api: widget.outcome.client,
-      folderId: widget.folder.id,
+      folderId: _folder.id,
     );
   }
 
@@ -44,6 +44,8 @@ class _SendScreenState extends State<SendScreen> {
       FolderPicker.clearCache();
     }
     _controller.dispose();
+    // The drive screen used to own the client's lifetime; it no longer exists.
+    widget.outcome.client.close();
     super.dispose();
   }
 
@@ -89,7 +91,7 @@ class _SendScreenState extends State<SendScreen> {
     final done = _controller.items.where((i) => i.state == TransferState.done).length;
     final failed = _controller.items.where((i) => i.state == TransferState.failed).length;
     final message = switch ((done, failed)) {
-      (_, 0) => 'Sent $done ${done == 1 ? 'file' : 'files'} to ${widget.folder.name}.',
+      (_, 0) => 'Sent $done ${done == 1 ? 'file' : 'files'} to ${_folder.name}.',
       (0, _) => 'Nothing was sent. Tap Send to try again.',
       _ => 'Sent $done, $failed failed. Tap Send to retry the rest.',
     };
@@ -108,7 +110,7 @@ class _SendScreenState extends State<SendScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Into ${widget.folder.root} on ${widget.outcome.info.serverName}',
+                'Into ${_folder.root.isEmpty ? 'the PC backup folder' : _folder.root} on ${widget.outcome.info.serverName}',
                 style: Theme.of(context).textTheme.bodySmall,
                 overflow: TextOverflow.ellipsis,
               ),

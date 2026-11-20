@@ -138,7 +138,17 @@ func runServe(args []string) int {
 		Blobs:          blobs,
 		Folders:        folders,
 		Volumes:        volume.List,
-		SetDestination: destinations.Set,
+		// The PC app's Storage screen is the single source of truth for where backups go. When it
+		// changes, bring every paired phone's backup folder along: the phone no longer picks a
+		// drive, so a setting made on the PC must actually take effect on paired devices.
+		SetDestination: func(volume, subfolder string) (folder.Folder, error) {
+			selected, err := destinations.Set(volume, subfolder)
+			if err != nil {
+				return folder.Folder{}, err
+			}
+			followDestination(deviceStore, folders, logger, volume, subfolder)
+			return selected, nil
+		},
 		// The desktop app is local: it gets status and the control surface without a device
 		// token, over routes guarded to loopback connections (see api/local.go).
 		LocalState:   func() api.LocalState { return session.state(destinations) },
@@ -250,6 +260,25 @@ func registerBackupFolder(folders *folder.Registry, cfg devices.BackupConfig) (f
 		return folder.Folder{}, err
 	}
 	return selected, nil
+}
+
+// followDestination re-points every paired device's backup at the destination just chosen in the
+// PC app. Failures are logged and skipped: one removed or unplugged device must not fail the
+// global setting for everyone else, though it may keep uploading to its old folder until it is
+// reachable again.
+func followDestination(store *devices.Store, folders *folder.Registry, logger *slog.Logger, volume, subfolder string) {
+	for _, device := range store.List() {
+		updated, err := store.UpdateBackup(device.ID, volume, subfolder, true)
+		if err != nil {
+			logger.Warn("could not update device backup after destination change",
+				"device_id", device.ID, "err", err)
+			continue
+		}
+		if _, err := registerBackupFolder(folders, updated.Backup); err != nil {
+			logger.Warn("could not register device backup folder after destination change",
+				"device_id", device.ID, "root", updated.Backup.Root, "err", err)
+		}
+	}
 }
 
 // deviceBackups builds the PC app's paired-device rows, including whether each backup root is

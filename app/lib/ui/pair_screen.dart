@@ -7,7 +7,7 @@ import '../core/agent_client.dart';
 import '../core/gen/version.dart';
 import '../core/pairing_flow.dart';
 import '../core/pairing_payload.dart';
-import 'drives_screen.dart';
+import 'send_screen.dart';
 import 'qr_scan_screen.dart';
 import 'update_button.dart';
 
@@ -81,8 +81,10 @@ class _PairScreenState extends State<PairScreen> {
         outcome.client.close();
         return;
       }
+      // The destination is chosen on the paired PC, so there is no drive picker here. The agent
+      // already told us which folder this device backs up to in `outcome.info`.
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => DrivesScreen(outcome: outcome)),
+        MaterialPageRoute(builder: (_) => SendScreen(outcome: outcome)),
       );
     } on CloudBoxException catch (error) {
       setState(() => _error = error.message);

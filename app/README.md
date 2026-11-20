@@ -1,10 +1,12 @@
 # CloudBox Android app
 
-The Flutter client. Pairs with the PC agent over pinned TLS, lists the agent's drives, and sends
-the files you pick to the drive you choose over a resumable, hash-verified transfer. The **Upload a
-whole folder** checkbox swaps the file picker for the Android folder picker: it walks the whole tree
-through the Storage Access Framework, stages the files in the app cache, and uploads each one with
-its relative path (`DCIM/Camera/photo.jpg`) so the agent recreates the subfolders on the PC.
+The Flutter client. Pairs with the PC agent over pinned TLS and sends the files you pick over a
+resumable, hash-verified transfer. The destination drive and folder are configured on the PC in the
+CloudBox app's Storage screen; the phone uses the folder the agent reports at pairing and never
+asks you to pick a drive. The **Upload a whole folder** checkbox swaps the file picker for the
+Android folder picker: it walks the whole tree through the Storage Access Framework, stages the
+files in the app cache, and uploads each one with its relative path (`DCIM/Camera/photo.jpg`) so
+the agent recreates the subfolders on the PC.
 
 ## Build & test
 
@@ -38,7 +40,8 @@ android {
         versionName = cloudboxVersion
         versionCode = cloudboxVersion.split(".").let { p ->
             require(p.size == 5) { "VERSION must be MAJOR.MINOR.DD.MM.YY, got $cloudboxVersion" }
-            (p[4].toInt() * 10000) + (p[3].toInt() * 100) + p[2].toInt()   // YYMMDD
+            // YYMMDDNN: minor keeps same-day releases installable over each other.
+            ((p[4].toInt() * 10000) + (p[3].toInt() * 100) + p[2].toInt()) * 100 + p[1].toInt()
         }
     }
 }
@@ -67,7 +70,6 @@ lib/
    ├─ pair_screen.dart      scan a QR or paste the pairing code, pair over pinned TLS
    ├─ qr_scan_screen.dart   camera scanner using mobile_scanner
    ├─ update_button.dart    header Update button and release dialog
-   ├─ drives_screen.dart    list drives; "Use this drive" sets the destination
    └─ send_screen.dart      pick files or a whole folder, watch upload progress
 ```
 

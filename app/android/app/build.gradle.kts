@@ -26,7 +26,8 @@ android {
         versionName = cloudboxVersion
         versionCode = cloudboxVersion.split(".").let { p ->
             require(p.size == 5) { "VERSION must be MAJOR.MINOR.DD.MM.YY, got $cloudboxVersion" }
-            (p[4].toInt() * 10000) + (p[3].toInt() * 100) + p[2].toInt()
+            // YYMMDDNN: the minor counter makes same-day pre-releases installable over each other.
+            ((p[4].toInt() * 10000) + (p[3].toInt() * 100) + p[2].toInt()) * 100 + p[1].toInt()
         }
     }
 

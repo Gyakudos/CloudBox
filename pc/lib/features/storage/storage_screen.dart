@@ -124,7 +124,8 @@ class _StorageScreenState extends State<StorageScreen> {
           Text('Cloud storage', style: theme.textTheme.headlineSmall),
           const SizedBox(height: 4),
           Text(
-            'Choose the drive where this PC keeps your phone backups.',
+            'Choose the drive where this PC keeps backups from all paired phones. '
+            'Paired phones use this location automatically — there is nothing to set on the phone.',
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 24),
