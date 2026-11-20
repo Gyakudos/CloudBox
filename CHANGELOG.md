@@ -10,6 +10,17 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.04.20.11.26] — 2026-11-20
+
+Android can now back up whole folders, recreating their subfolders on the PC.
+
+### Added
+
+- **Folder uploads on Android** — a "Upload a whole folder" checkbox on the Send screen opens the
+  Android folder picker and queues every file in the tree. Subfolders are recreated on the PC under
+  the picked folder's name (`DCIM/Camera/photo.jpg`), using a native Storage Access Framework
+  bridge because `dart:io` cannot read `content://` documents under scoped storage.
+
 ## [0.03.19.11.26] — 2026-11-19
 
 A single desktop shortcut now starts the agent and the PC app together in one window, with an Agent

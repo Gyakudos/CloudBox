@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../core/folder_picker.dart';
 import '../core/models.dart';
 import '../core/pairing_flow.dart';
 import '../core/transfer.dart';
@@ -24,6 +25,7 @@ class SendScreen extends StatefulWidget {
 class _SendScreenState extends State<SendScreen> {
   late final TransferController _controller;
   bool _picking = false;
+  bool _folderMode = false;
 
   @override
   void initState() {
@@ -36,6 +38,11 @@ class _SendScreenState extends State<SendScreen> {
 
   @override
   void dispose() {
+    // Staged folder copies are only needed while their items are queued. Never clear them during
+    // a transfer: the reader may still be working through them.
+    if (!_controller.running) {
+      FolderPicker.clearCache();
+    }
     _controller.dispose();
     super.dispose();
   }
@@ -43,13 +50,25 @@ class _SendScreenState extends State<SendScreen> {
   Future<void> _pickFiles() async {
     setState(() => _picking = true);
     try {
+      if (_folderMode) {
+        final files = await FolderPicker.pickFolder();
+        if (!mounted || files == null) return;
+        if (files.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('That folder has no files to send.')),
+          );
+          return;
+        }
+        _controller.addFiles(sourceFilesFromFolder(files));
+        return;
+      }
       final files = await FilePicker.pickFiles(dialogTitle: 'Choose files to back up');
       if (!mounted) return;
       _controller.addFiles(files.map(_toSourceFile));
     } on Object catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open the file picker: $error')),
+        SnackBar(content: Text('Could not open the picker: $error')),
       );
     } finally {
       if (mounted) setState(() => _picking = false);
@@ -101,7 +120,10 @@ class _SendScreenState extends State<SendScreen> {
         listenable: _controller,
         builder: (context, _) {
           if (_controller.items.isEmpty) {
-            return _EmptyState(onPick: _picking ? null : _pickFiles);
+            return _EmptyState(
+              onPick: _picking ? null : _pickFiles,
+              folderMode: _folderMode,
+            );
           }
           return ListView.separated(
             padding: const EdgeInsets.all(16),
@@ -121,34 +143,59 @@ class _SendScreenState extends State<SendScreen> {
         listenable: _controller,
         builder: (context, _) {
           final running = _controller.running;
+          final locked = running || _picking;
           return SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: running || _picking ? null : _pickFiles,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Add files'),
-                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                    ),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _folderMode,
+                        onChanged: locked
+                            ? null
+                            : (value) => setState(() => _folderMode = value ?? false),
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          'Upload a whole folder (keeps subfolders)',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: running
-                        ? FilledButton.tonalIcon(
-                            onPressed: _controller.cancel,
-                            icon: const Icon(Icons.stop),
-                            label: const Text('Stop'),
-                            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                          )
-                        : FilledButton.icon(
-                            onPressed: _controller.items.isEmpty ? null : _send,
-                            icon: const Icon(Icons.cloud_upload),
-                            label: const Text('Send'),
-                            style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                          ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: locked ? null : _pickFiles,
+                          icon: const Icon(Icons.add),
+                          label: Text(_folderMode ? 'Add folder' : 'Add files'),
+                          style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: running
+                            ? FilledButton.tonalIcon(
+                                onPressed: _controller.cancel,
+                                icon: const Icon(Icons.stop),
+                                label: const Text('Stop'),
+                                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                              )
+                            : FilledButton.icon(
+                                onPressed: _controller.items.isEmpty ? null : _send,
+                                icon: const Icon(Icons.cloud_upload),
+                                label: const Text('Send'),
+                                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                              ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -161,9 +208,10 @@ class _SendScreenState extends State<SendScreen> {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onPick});
+  const _EmptyState({required this.onPick, required this.folderMode});
 
   final VoidCallback? onPick;
+  final bool folderMode;
 
   @override
   Widget build(BuildContext context) {
@@ -179,8 +227,11 @@ class _EmptyState extends StatelessWidget {
             Text('Nothing queued yet', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
-              'Pick photos, videos or any other files from this phone. They are hashed here, '
-              'then sent straight to your PC — nothing goes through a server we control.',
+              folderMode
+                  ? 'Pick a folder to send everything inside it. Subfolders are kept on your PC, '
+                      'under the folder’s own name.'
+                  : 'Pick photos, videos or any other files from this phone. They are hashed here, '
+                      'then sent straight to your PC — nothing goes through a server we control.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
@@ -188,7 +239,7 @@ class _EmptyState extends StatelessWidget {
             FilledButton.icon(
               onPressed: onPick,
               icon: const Icon(Icons.folder_open),
-              label: const Text('Choose files'),
+              label: Text(folderMode ? 'Choose folder' : 'Choose files'),
             ),
           ],
         ),

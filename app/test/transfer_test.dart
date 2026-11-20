@@ -145,6 +145,22 @@ void main() {
       expect(api.bytesFor('upload-1'), bytes);
     });
 
+    test('commits a folder upload at its relative path', () async {
+      final bytes = _pattern(300);
+      final api = FakeUploadApi();
+      final controller = TransferController(api: api, chunkSize: 256);
+      controller.addFiles([_source('DCIM/Camera/IMG_001.jpg', bytes)]);
+
+      await controller.run();
+
+      final item = controller.items.single;
+      expect(item.state, TransferState.done);
+      expect(item.error, isNull);
+      // The agent creates parent directories, so the whole relative path must reach commit.
+      expect(api.commitPaths, ['DCIM/Camera/IMG_001.jpg']);
+      expect(item.remotePath, 'DCIM/Camera/IMG_001.jpg');
+    });
+
     test('reads a file delivered in several stream events', () async {
       final bytes = _pattern(1000);
       final api = FakeUploadApi();

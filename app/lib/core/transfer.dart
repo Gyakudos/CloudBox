@@ -22,7 +22,8 @@ import 'upload_api.dart';
 class SourceFile {
   const SourceFile({required this.name, required this.openRead, this.size});
 
-  /// The file's base name, used as the destination path inside the sync folder.
+  /// Destination path inside the sync folder. A plain file uses its base name (`photo.jpg`);
+  /// a folder upload carries a slash-separated relative path (`DCIM/Camera/IMG_001.jpg`).
   final String name;
 
   /// The size in bytes, when the picker knew it. The engine does not rely on it: the hash pass

@@ -132,7 +132,9 @@ pwsh eng/smoke.ps1
 **Android app** — Flutter. Pairs over pinned TLS, lists the PC's drives, then sends files to the
 drive you pick. Scan the QR shown by the PC app or paste the pairing code the agent prints, choose
 a drive, pick the files to back up, and watch a resumable, hash-verified transfer land on the PC.
-The **Update** button in the header checks GitHub Releases for a newer build.
+Tick **Upload a whole folder** to back up a folder tree instead: every file inside is queued and
+its subfolders are recreated on the PC under the picked folder's name. The **Update** button in the
+header checks GitHub Releases for a newer build.
 
 ```sh
 cd app

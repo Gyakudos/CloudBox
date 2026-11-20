@@ -1,7 +1,10 @@
 # CloudBox Android app
 
 The Flutter client. Pairs with the PC agent over pinned TLS, lists the agent's drives, and sends
-the files you pick to the drive you choose over a resumable, hash-verified transfer.
+the files you pick to the drive you choose over a resumable, hash-verified transfer. The **Upload a
+whole folder** checkbox swaps the file picker for the Android folder picker: it walks the whole tree
+through the Storage Access Framework, stages the files in the app cache, and uploads each one with
+its relative path (`DCIM/Camera/photo.jpg`) so the agent recreates the subfolders on the PC.
 
 ## Build & test
 
@@ -54,6 +57,7 @@ lib/
 │  ├─ agent_client.dart     pinned-TLS client; implements UploadApi
 │  ├─ upload_api.dart       interface the transfer engine talks to (test seam)
 │  ├─ transfer.dart         Flutter-free transfer engine (resume, dedupe, cancel)
+│  ├─ folder_picker.dart    Android SAF folder picker bridge + staged-file mapping
 │  ├─ hashing.dart          streaming BLAKE3-256 (the protocol's content ID)
 │  ├─ models.dart           wire models: volumes, tickets, status, commit results
 │  ├─ pinning.dart          SPKI pin extraction and verification
@@ -64,8 +68,14 @@ lib/
    ├─ qr_scan_screen.dart   camera scanner using mobile_scanner
    ├─ update_button.dart    header Update button and release dialog
    ├─ drives_screen.dart    list drives; "Use this drive" sets the destination
-   └─ send_screen.dart      pick files and watch the upload progress
+   └─ send_screen.dart      pick files or a whole folder, watch upload progress
 ```
+
+The folder picker's native side is
+`android/app/src/main/kotlin/dev/cloudbox/cloudbox/FolderPickerPlugin.kt`. It uses
+`ACTION_OPEN_DOCUMENT_TREE`, walks the tree with `DocumentsContract`, and copies the files into
+`cacheDir/cloudbox-folders` so the Dart engine can read them as normal files. That cache is cleared
+when you leave the Send screen.
 
 ## Android build notes
 
