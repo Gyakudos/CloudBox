@@ -69,6 +69,25 @@ void main() {
       });
     }
 
+    test('background isolate hashing matches the main-isolate digest', () async {
+      final bytes = _mix(2500000);
+      final file = await _write(bytes);
+      addTearDown(() => file.parent.delete(recursive: true));
+
+      final direct = await blake3HexOfFile(file.path);
+      final reported = <int>[];
+      final outcome = await blake3HexOfFileInBackground(
+        file.path,
+        totalBytes: bytes.length,
+        onProgress: (read, total) => reported.add(read),
+      );
+
+      expect(outcome.hash, direct);
+      expect(outcome.length, bytes.length);
+      expect(reported, isNotEmpty);
+      expect(reported.every((read) => read > 0 && read <= bytes.length), isTrue);
+    });
+
     test('reports progress that ends at the file size', () async {
       final bytes = _mix(3000);
       final file = await _write(bytes);

@@ -15,6 +15,7 @@ void main() {
       'DCIM/notes.txt',
     ]);
     expect(sources.map((s) => s.size), [3, 5]);
+    expect(sources.map((s) => s.path), ['/cache/one.jpg', '/cache/notes.txt']);
   });
 
   test('a staged source reopens and reads its file', () async {

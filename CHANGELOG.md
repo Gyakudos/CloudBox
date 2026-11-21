@@ -10,6 +10,24 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.07.21.11.26] — 2026-11-21
+
+Sending files no longer locks up the phone, and pairings are remembered between sends.
+
+### Added
+
+- **Paired devices list on Android** — the app now opens on a list of PCs this phone has paired
+  with. Tap one to reconnect with its saved device token and go straight to the Send screen; no QR
+  scan is needed for later sends. Pairings can also be forgotten from the list.
+
+### Fixed
+
+- **The app no longer freezes when files are selected.** BLAKE3 hashing was running on the UI
+  isolate and rebuilding the whole list for every 64 KiB chunk. Hashing now runs on a background
+  isolate whenever the picker supplies a path (both Android pickers do), and progress notifications
+  are capped at roughly 12 fps. The progress bar is indeterminate until the size is known instead
+  of appearing stuck at zero.
+
 ## [0.06.20.11.26] — 2026-11-20
 
 Re-release of the PC-configured destination fix with a CI-compatible test.

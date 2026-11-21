@@ -1,9 +1,11 @@
 # CloudBox Android app
 
-The Flutter client. Pairs with the PC agent over pinned TLS and sends the files you pick over a
-resumable, hash-verified transfer. The destination drive and folder are configured on the PC in the
-CloudBox app's Storage screen; the phone uses the folder the agent reports at pairing and never
-asks you to pick a drive. The **Upload a whole folder** checkbox swaps the file picker for the
+The Flutter client. The home screen lists PCs already paired with this phone — tap one to reconnect
+and send without scanning the QR code again. Pairing itself is over pinned TLS, and files are sent
+over a resumable, hash-verified transfer. The destination drive and folder are configured on the PC
+in the CloudBox app's Storage screen; the phone uses the folder the agent reports at pairing and
+never asks you to pick a drive. Hashing runs on a background isolate so a large photo or folder does
+not lock up the UI. The **Upload a whole folder** checkbox swaps the file picker for the
 Android folder picker: it walks the whole tree through the Storage Access Framework, stages the
 files in the app cache, and uploads each one with its relative path (`DCIM/Camera/photo.jpg`) so
 the agent recreates the subfolders on the PC.
@@ -65,8 +67,10 @@ lib/
 │  ├─ models.dart           wire models: volumes, tickets, status, commit results
 │  ├─ pinning.dart          SPKI pin extraction and verification
 │  ├─ pairing_payload.dart  parse/validate the agent's pairing code
+│  ├─ paired_devices.dart   save and reload pairings on the phone
 │  └─ update_checker.dart   check GitHub Releases for a newer pre-release build
 └─ ui/
+   ├─ paired_devices_screen.dart  home list; reconnect to a saved PC without re-pairing
    ├─ pair_screen.dart      scan a QR or paste the pairing code, pair over pinned TLS
    ├─ qr_scan_screen.dart   camera scanner using mobile_scanner
    ├─ update_button.dart    header Update button and release dialog

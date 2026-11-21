@@ -79,6 +79,8 @@ List<SourceFile> sourceFilesFromFolder(Iterable<FolderFile> files) {
     return SourceFile(
       name: file.relativePath,
       size: file.size,
+      // Staged files are real paths, so hashing can run off the UI isolate.
+      path: file.path,
       openRead: () => File(file.path).openRead().map(
             (chunk) => chunk is Uint8List ? chunk : Uint8List.fromList(chunk),
           ),

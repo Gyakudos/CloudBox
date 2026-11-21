@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'ui/pair_screen.dart';
+import 'ui/paired_devices_screen.dart';
 
 void main() {
   runApp(const CloudBoxApp());
@@ -24,7 +24,7 @@ class CloudBoxApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: _seed, brightness: Brightness.dark),
         useMaterial3: true,
       ),
-      home: const PairScreen(),
+      home: const PairedDevicesScreen(),
     );
   }
 }

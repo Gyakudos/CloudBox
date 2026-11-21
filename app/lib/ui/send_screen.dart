@@ -80,6 +80,8 @@ class _SendScreenState extends State<SendScreen> {
   SourceFile _toSourceFile(PlatformFile file) => SourceFile(
         name: file.name,
         size: file.lengthSync(),
+        // Let the engine hash on a background isolate instead of freezing the UI.
+        path: file.path,
         // Re-openable: the engine hashes, uploads, and may re-read after a resume.
         openRead: file.readAsByteStream,
       );
@@ -286,7 +288,13 @@ class _TransferTile extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: item.state == TransferState.queued ? 0 : item.progress,
+                // Unknown size (or a hash still in flight) is honest as indeterminate rather
+                // than a bar pinned at zero, which looks like a frozen transfer.
+                value: item.total <= 0 && item.state == TransferState.hashing
+                    ? null
+                    : item.state == TransferState.queued
+                        ? 0
+                        : item.progress,
                 minHeight: 6,
                 backgroundColor: scheme.surfaceContainerHighest,
               ),

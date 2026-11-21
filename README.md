@@ -129,12 +129,14 @@ out-of-order appends, uploads a file, commits it into the sync folder, and check
 pwsh eng/smoke.ps1
 ```
 
-**Android app** — Flutter. Pairs over pinned TLS, then sends files straight to the destination set
-in the PC app's Storage screen — there is no drive picker on the phone. Scan the QR shown by the PC
-app or paste the pairing code the agent prints, pick the files to back up, and watch a resumable,
-hash-verified transfer land on the PC. Tick **Upload a whole folder** to back up a folder tree
-instead: every file inside is queued and its subfolders are recreated on the PC under the picked
-folder's name. The **Update** button in the header checks GitHub Releases for a newer build.
+**Android app** — Flutter. The home screen lists PCs you have already paired with; tap one to
+reconnect and send without scanning a QR code again. Pairing itself is over pinned TLS, and files go
+straight to the destination set in the PC app's Storage screen — there is no drive picker on the
+phone. Scan the QR shown by the PC app or paste the pairing code the agent prints, pick the files to
+back up, and watch a resumable, hash-verified transfer land on the PC. Tick **Upload a whole folder**
+to back up a folder tree instead: every file inside is queued and its subfolders are recreated on
+the PC under the picked folder's name. The **Update** button checks GitHub Releases for a newer
+build.
 
 ```sh
 cd app

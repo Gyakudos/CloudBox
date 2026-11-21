@@ -20,7 +20,7 @@ import 'upload_api.dart';
 /// picker, and so a picked file that exists only as an Android `content://` URI (no filesystem
 /// path) is first-class: everything goes through [openRead].
 class SourceFile {
-  const SourceFile({required this.name, required this.openRead, this.size});
+  const SourceFile({required this.name, required this.openRead, this.size, this.path});
 
   /// Destination path inside the sync folder. A plain file uses its base name (`photo.jpg`);
   /// a folder upload carries a slash-separated relative path (`DCIM/Camera/IMG_001.jpg`).
@@ -33,6 +33,11 @@ class SourceFile {
   /// Opens a fresh stream over the file's bytes. Called more than once (hash pass, then upload,
   /// then a re-open after a resume), so it must be re-openable.
   final Stream<Uint8List> Function() openRead;
+
+  /// A readable filesystem path, when the picker provided one. Both the Android file picker and
+  /// the folder picker stage files on disk, so hashing normally happens on a background isolate
+  /// instead of blocking the UI thread. Null only when bytes are reachable as a stream alone.
+  final String? path;
 }
 
 /// Where one file is in its journey.
@@ -160,17 +165,11 @@ class TransferController extends ChangeNotifier {
       item.hashed = 0;
       notifyListeners();
 
-      final hash = await blake3HexOfStream(
-        item.source.openRead(),
-        totalBytes: item.source.size,
-        onProgress: (read, total) {
-          item.hashed = read;
-          item.total = total;
-          notifyListeners();
-        },
-      );
+      final hashOutcome = await _hash(item);
+      final hash = hashOutcome.hash;
       // The hash pass is authoritative for the size: it counted the bytes we will actually send.
-      item.total = item.hashed;
+      item.hashed = hashOutcome.length;
+      item.total = hashOutcome.length;
       notifyListeners();
 
       if (_cancelRequested) {
@@ -226,7 +225,7 @@ class TransferController extends ChangeNotifier {
             rethrow;
           }
           item.uploaded = offset;
-          notifyListeners();
+          _notifyProgress();
         }
       } finally {
         await reader.close();
@@ -245,6 +244,43 @@ class TransferController extends ChangeNotifier {
       item.error = '$error';
       notifyListeners();
     }
+  }
+
+  DateTime? _lastProgressAt;
+
+  /// Rebuilds are expensive when a picked folder holds hundreds of files, and hashing emits a
+  /// progress event for every 64 KiB chunk. Cap UI updates at roughly 12 fps: the state changes
+  /// around each phase still notify immediately, so the bar always reaches 100%.
+  void _notifyProgress() {
+    final now = DateTime.now();
+    final last = _lastProgressAt;
+    if (last != null && now.difference(last).inMilliseconds < 80) return;
+    _lastProgressAt = now;
+    notifyListeners();
+  }
+
+  /// Hashes on a background isolate whenever the picker gave us a path. Both Android pickers
+  /// stage files on disk; the stream-only branch remains for platforms that cannot.
+  Future<HashOutcome> _hash(TransferItem item) {
+    void progress(int read, int total) {
+      item.hashed = read;
+      if (total > 0) item.total = total;
+      _notifyProgress();
+    }
+
+    final path = item.source.path;
+    if (path != null) {
+      return blake3HexOfFileInBackground(
+        path,
+        totalBytes: item.source.size,
+        onProgress: progress,
+      );
+    }
+    return blake3HexAndLengthOfStream(
+      item.source.openRead(),
+      totalBytes: item.source.size,
+      onProgress: progress,
+    );
   }
 
   void _finish(TransferItem item, CommitResult result, {required bool deduped}) {

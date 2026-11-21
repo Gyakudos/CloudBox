@@ -3,15 +3,52 @@
 
 import 'agent_client.dart';
 import 'models.dart';
+import 'paired_devices.dart';
 import 'pairing_payload.dart';
 
-/// The result of a successful pairing: a live client plus what we learned about the PC.
+/// The result of a successful pairing or a reconnect to a saved PC: a live client plus what we
+/// learned about the PC.
 class PairingOutcome {
-  const PairingOutcome({required this.client, required this.pairing, required this.info});
+  const PairingOutcome({
+    required this.client,
+    required this.pairing,
+    required this.info,
+    required this.payload,
+    required this.deviceName,
+    required this.appVersion,
+    required this.platform,
+  });
 
   final CloudBoxClient client;
   final PairingResult pairing;
   final ServerInfo info;
+
+  /// The QR payload the pairing came from, kept so the pairing can be saved for later sends.
+  final PairingPayload payload;
+
+  /// The name the phone gave the PC during pairing.
+  final String deviceName;
+
+  /// This app's version at pairing time, shown on the PC's paired-devices screen.
+  final String appVersion;
+
+  /// Platform reported to the PC at pairing time.
+  final String platform;
+
+  /// Everything needed to reconnect next time without scanning the QR code again.
+  PairedDeviceRecord get record => PairedDeviceRecord(
+        deviceId: pairing.deviceId,
+        deviceToken: pairing.deviceToken,
+        deviceName: deviceName,
+        serverId: pairing.serverId,
+        serverName: info.serverName,
+        serverVersion: info.version,
+        platform: platform,
+        appVersion: appVersion,
+        endpoints: payload.endpoints,
+        pin: payload.pin,
+        pairedAt: DateTime.now(),
+      );
 
   /// The backup destination the PC configured for this phone.
   ///
@@ -50,7 +87,45 @@ Future<PairingOutcome> pairWithPayload(
       platform: platform,
     );
     final info = await client.info();
-    return PairingOutcome(client: client, pairing: pairing, info: info);
+    return PairingOutcome(
+      client: client,
+      pairing: pairing,
+      info: info,
+      payload: payload,
+      deviceName: deviceName,
+      appVersion: appVersion,
+      platform: platform,
+    );
+  } catch (_) {
+    client.close();
+    rethrow;
+  }
+}
+
+/// Reconnects using a pairing saved on the phone. No single-use pairing token is involved: the
+/// device token from the original handshake authenticates the request.
+///
+/// Closes the client if the PC cannot be reached, so a retry never leaks a connection pool.
+Future<PairingOutcome> connectToPairedDevice(PairedDeviceRecord record) async {
+  final payload = record.toPayload();
+  final client = CloudBoxClient.forPairedDevice(payload, record.deviceToken);
+  try {
+    final info = await client.info();
+    return PairingOutcome(
+      client: client,
+      pairing: PairingResult(
+        deviceId: record.deviceId,
+        deviceToken: record.deviceToken,
+        serverId: record.serverId,
+        serverName: info.serverName,
+        serverVersion: record.serverVersion,
+      ),
+      info: info,
+      payload: payload,
+      deviceName: record.deviceName,
+      appVersion: record.appVersion,
+      platform: record.platform,
+    );
   } catch (_) {
     client.close();
     rethrow;

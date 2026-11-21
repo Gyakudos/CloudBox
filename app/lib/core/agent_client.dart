@@ -50,6 +50,14 @@ class CloudBoxClient implements UploadApi {
     return client;
   }
 
+  /// Rebuilds a client from a pairing saved on the phone. No pairing token is consumed: the device
+  /// token from the original handshake authenticates this client directly.
+  factory CloudBoxClient.forPairedDevice(PairingPayload payload, String deviceToken) {
+    final client = CloudBoxClient.forPayload(payload);
+    client._deviceToken = deviceToken;
+    return client;
+  }
+
   final HttpClient _http;
   final List<Uri> _endpoints;
   final String _pin;

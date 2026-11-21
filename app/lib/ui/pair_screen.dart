@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../core/agent_client.dart';
 import '../core/gen/version.dart';
+import '../core/paired_devices.dart';
 import '../core/pairing_flow.dart';
 import '../core/pairing_payload.dart';
 import 'send_screen.dart';
@@ -77,6 +78,9 @@ class _PairScreenState extends State<PairScreen> {
       final payload = PairingPayload.parse(_payloadController.text);
       final name = _nameController.text.trim().isEmpty ? 'Android phone' : _nameController.text.trim();
       final outcome = await pairWithPayload(payload, deviceName: name, appVersion: kCloudBoxVersion);
+      // Save before checking `mounted`: even if the screen went away, the pairing is valid and
+      // should be available from the Paired devices list next time.
+      await PairedDeviceStore.upsert(outcome.record);
       if (!mounted) {
         outcome.client.close();
         return;

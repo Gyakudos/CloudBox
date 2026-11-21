@@ -6,7 +6,7 @@ publish_to: 'none'
 # (0.01.15.11.26) or the leading zero in "01", so the authoritative string lives in
 # lib/core/gen/version.dart and the Android manifest version is overridden in
 # android/app/build.gradle.kts. eng/version.ps1 keeps this line in sync.
-version: 0.6.20+26112006
+version: 0.7.21+26112107
 
 environment:
   sdk: ^3.13.7
@@ -28,6 +28,8 @@ dependencies:
 
   # Native file and directory picker. Used to choose the files to back up from the phone.
   file_picker: ^13.3.3
+  # Remembers paired PCs so sending new files does not require scanning the QR code again.
+  shared_preferences: ^2.5.6
   mobile_scanner: ^7.5.0
   url_launcher: ^6.3.3
 
