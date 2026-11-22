@@ -5,6 +5,7 @@ import '../core/folder_picker.dart';
 import '../core/models.dart';
 import '../core/pairing_flow.dart';
 import '../core/transfer.dart';
+import 'paired_devices_screen.dart';
 
 /// Choose files and send them to the destination configured on the paired PC.
 ///
@@ -21,17 +22,19 @@ class SendScreen extends StatefulWidget {
 }
 
 class _SendScreenState extends State<SendScreen> {
+  late PairingOutcome _outcome;
   late final TransferController _controller;
-  late final CloudBoxFolder _folder;
+  late CloudBoxFolder _folder;
   bool _picking = false;
   bool _folderMode = false;
 
   @override
   void initState() {
     super.initState();
-    _folder = widget.outcome.destinationFolder;
+    _outcome = widget.outcome;
+    _folder = _outcome.destinationFolder;
     _controller = TransferController(
-      api: widget.outcome.client,
+      api: _outcome.client,
       folderId: _folder.id,
     );
   }
@@ -44,8 +47,9 @@ class _SendScreenState extends State<SendScreen> {
       FolderPicker.clearCache();
     }
     _controller.dispose();
-    // The drive screen used to own the client's lifetime; it no longer exists.
-    widget.outcome.client.close();
+    // The drive screen used to own the client's lifetime; it no longer exists. This is whatever PC
+    // is selected right now, which may differ from the one we started with.
+    _outcome.client.close();
     super.dispose();
   }
 
@@ -100,6 +104,59 @@ class _SendScreenState extends State<SendScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Opens the paired-devices list in selection mode and switches this screen to the chosen PC.
+  ///
+  /// The controller is retargeted rather than recreated, so every file and folder already in the
+  /// queue survives the switch and can be sent to the new destination along with anything added
+  /// afterwards. Switching during a transfer would strand its in-flight ticket on the old client,
+  /// so the button is disabled while running.
+  Future<void> _selectDestination() async {
+    if (_controller.running || _picking) return;
+    final currentServerId = _outcome.pairing.serverId;
+    final currentDeviceId = _outcome.pairing.deviceId;
+    final outcome = await Navigator.of(context).push<PairingOutcome>(
+      MaterialPageRoute(
+        builder: (_) => PairedDevicesScreen(
+          selectionMode: true,
+          currentDeviceKey: '$currentServerId/$currentDeviceId',
+        ),
+      ),
+    );
+    if (!mounted) {
+      // The screen went away while the picker was open; do not leak the new connection.
+      outcome?.client.close();
+      return;
+    }
+    if (outcome == null) return; // Backed out: keep the current PC and the queue.
+    if (outcome.pairing.serverId == currentServerId &&
+        outcome.pairing.deviceId == currentDeviceId) {
+      outcome.client.close();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Already sending to this PC.')),
+      );
+      return;
+    }
+
+    final previous = _outcome;
+    final kept = _controller.items.length;
+    setState(() {
+      _outcome = outcome;
+      _folder = outcome.destinationFolder;
+      _controller.retarget(api: outcome.client, folderId: _folder.id);
+    });
+    // Retarget refuses while running, so the old client has no live request. Close it now: every
+    // switch creates a fresh client and exactly one should remain open.
+    previous.client.close();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Now sending to ${_outcome.info.serverName}. '
+          '$kept ${kept == 1 ? 'file' : 'files'} kept in the queue.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -112,7 +169,7 @@ class _SendScreenState extends State<SendScreen> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Into ${_folder.root.isEmpty ? 'the PC backup folder' : _folder.root} on ${widget.outcome.info.serverName}',
+                'Into ${_folder.root.isEmpty ? 'the PC backup folder' : _folder.root} on ${_outcome.info.serverName}',
                 style: Theme.of(context).textTheme.bodySmall,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -155,6 +212,15 @@ class _SendScreenState extends State<SendScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  OutlinedButton.icon(
+                    onPressed: locked ? null : _selectDestination,
+                    icon: const Icon(Icons.computer_outlined),
+                    label: const Text('Paired Devices'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Checkbox(

@@ -17,7 +17,11 @@ import 'update_button.dart';
 /// The code is a small JSON document — see [PairingPayload]. It can be pasted, copied from the
 /// clipboard with the button below, or scanned with the QR button in the app bar.
 class PairScreen extends StatefulWidget {
-  const PairScreen({super.key});
+  const PairScreen({super.key, this.selectionMode = false});
+
+  /// When the Send screen asks for a different PC, return the new pairing to it instead of pushing
+  /// a fresh Send screen. The pairing is still saved for later sends either way.
+  final bool selectionMode;
 
   @override
   State<PairScreen> createState() => _PairScreenState();
@@ -87,6 +91,10 @@ class _PairScreenState extends State<PairScreen> {
       }
       // The destination is chosen on the paired PC, so there is no drive picker here. The agent
       // already told us which folder this device backs up to in `outcome.info`.
+      if (widget.selectionMode) {
+        Navigator.of(context).pop(outcome);
+        return;
+      }
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => SendScreen(outcome: outcome)),
       );

@@ -10,6 +10,17 @@ date-stamped version scheme — see [ADR 0001](docs/decisions/0001-versioning.md
 
 ### Fixed
 
+## [0.08.22.11.26] — 2026-11-22
+
+Switch PCs mid-queue from the Android Send screen.
+
+### Added
+
+- **Paired Devices button on the Android Send screen** — switch to another paired PC without
+  starting over. Files and folders already queued stay in the queue (and are re-sent to the new
+  PC), so you can keep adding more and send everything in one go. The current PC is marked in the
+  picker, and a new PC can be paired from there too.
+
 ## [0.07.21.11.26] — 2026-11-21
 
 Sending files no longer locks up the phone, and pairings are remembered between sends.

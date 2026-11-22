@@ -11,8 +11,22 @@ import 'update_button.dart';
 ///
 /// Pairing codes are single-use, so the pairing is saved on the phone. Tapping a PC reconnects
 /// with the saved device token and opens the Send screen; no QR scan is needed for later sends.
+///
+/// The Send screen also opens this screen with [selectionMode] set. In that case tapping a PC
+/// returns the live connection to the Send screen so it can switch destination without dropping
+/// the files the user already queued.
 class PairedDevicesScreen extends StatefulWidget {
-  const PairedDevicesScreen({super.key});
+  const PairedDevicesScreen({
+    super.key,
+    this.selectionMode = false,
+    this.currentDeviceKey,
+  });
+
+  /// Return a [PairingOutcome] to the caller instead of opening a new Send screen.
+  final bool selectionMode;
+
+  /// Key of the PC currently in use, so selection mode can label it "Current".
+  final String? currentDeviceKey;
 
   @override
   State<PairedDevicesScreen> createState() => _PairedDevicesScreenState();
@@ -40,10 +54,21 @@ class _PairedDevicesScreenState extends State<PairedDevicesScreen> {
   }
 
   Future<void> _addPc() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PairScreen()),
+    final outcome = await Navigator.of(context).push<PairingOutcome>(
+      MaterialPageRoute(
+        builder: (_) => PairScreen(selectionMode: widget.selectionMode),
+      ),
     );
-    if (!mounted) return;
+    if (!mounted) {
+      // No screen left to hand the connection to.
+      outcome?.client.close();
+      return;
+    }
+    if (outcome != null && widget.selectionMode) {
+      // PairScreen popped the live connection; pass it on to the Send screen.
+      Navigator.of(context).pop(outcome);
+      return;
+    }
     setState(() => _loading = true);
     await _load();
   }
@@ -62,6 +87,11 @@ class _PairedDevicesScreenState extends State<PairedDevicesScreen> {
       );
       if (!mounted) {
         outcome.client.close();
+        return;
+      }
+      if (widget.selectionMode) {
+        // The Send screen owns this client from here; do not close it.
+        Navigator.of(context).pop(outcome);
         return;
       }
       await Navigator.of(context).push(
@@ -109,10 +139,11 @@ class _PairedDevicesScreenState extends State<PairedDevicesScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final selecting = widget.selectionMode;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Paired devices'),
+        title: Text(selecting ? 'Select a PC' : 'Paired devices'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -137,7 +168,9 @@ class _PairedDevicesScreenState extends State<PairedDevicesScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
           children: [
             Text(
-              'Pick a PC to send files to. You only need to pair once — after that it stays here.',
+              selecting
+                  ? 'Pick the PC to send your queued files to. Files and folders you already added stay in the queue.'
+                  : 'Pick a PC to send files to. You only need to pair once — after that it stays here.',
               style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
@@ -182,6 +215,8 @@ class _PairedDevicesScreenState extends State<PairedDevicesScreen> {
                 (device) => _PairedDeviceCard(
                   device: device,
                   busy: _busyKey == device.key,
+                  selectionMode: selecting,
+                  current: selecting && widget.currentDeviceKey == device.key,
                   onConnect: () => _connect(device),
                   onRemove: () => _remove(device),
                 ),
@@ -197,12 +232,16 @@ class _PairedDeviceCard extends StatelessWidget {
   const _PairedDeviceCard({
     required this.device,
     required this.busy,
+    required this.selectionMode,
+    required this.current,
     required this.onConnect,
     required this.onRemove,
   });
 
   final PairedDeviceRecord device;
   final bool busy;
+  final bool selectionMode;
+  final bool current;
   final VoidCallback onConnect;
   final VoidCallback onRemove;
 
@@ -225,7 +264,24 @@ class _PairedDeviceCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(device.serverName, style: theme.textTheme.titleMedium),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(device.serverName, style: theme.textTheme.titleMedium),
+                          ),
+                          if (current)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Chip(
+                                label: Text(
+                                  'Current',
+                                  style: theme.textTheme.labelSmall,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                        ],
+                      ),
                       Text(
                         '${device.deviceName} · paired $lastSeen',
                         style: theme.textTheme.bodySmall
@@ -234,11 +290,12 @@ class _PairedDeviceCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: 'Forget this PC',
-                  onPressed: busy ? null : onRemove,
-                  icon: const Icon(Icons.delete_outline),
-                ),
+                if (!selectionMode)
+                  IconButton(
+                    tooltip: 'Forget this PC',
+                    onPressed: busy ? null : onRemove,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -252,8 +309,14 @@ class _PairedDeviceCard extends StatelessWidget {
                         height: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.cloud_upload_outlined),
-                label: Text(busy ? 'Connecting…' : 'Send files'),
+                    : Icon(selectionMode ? Icons.check_circle_outline : Icons.cloud_upload_outlined),
+                label: Text(
+                  busy
+                      ? 'Connecting…'
+                      : selectionMode
+                          ? (current ? 'Current PC' : 'Select this PC')
+                          : 'Send files',
+                ),
               ),
             ),
           ],

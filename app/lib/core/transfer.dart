@@ -88,15 +88,21 @@ class TransferItem {
 /// PC, and sequential transfers keep the progress the user sees honest.
 class TransferController extends ChangeNotifier {
   TransferController({
-    required this.api,
-    this.folderId = 'default',
+    required this._api,
+    String folderId = 'default',
     this.chunkSize = 4 << 20, // 4 MiB
-  });
+    // `folderId` must stay public so callers outside this library can pass it; making it an
+    // initializing formal would rename the parameter to the private `_folderId`.
+    // ignore: prefer_initializing_formals
+  }) : _folderId = folderId;
 
-  final UploadApi api;
+  UploadApi _api;
+  String _folderId;
 
-  /// The folder ID the drive picker configured (see the agent's destination package).
-  final String folderId;
+  UploadApi get api => _api;
+
+  /// The destination folder chosen on the PC (see the agent's destination package).
+  String get folderId => _folderId;
 
   /// Size of each PATCH body. Bounds the memory a transfer holds to one chunk.
   final int chunkSize;
@@ -129,6 +135,33 @@ class TransferController extends ChangeNotifier {
   void clear() {
     if (_running) return;
     items.clear();
+    notifyListeners();
+  }
+
+  /// Points the existing queue at another PC and its destination folder.
+  ///
+  /// The Send screen calls this from its Paired Devices button. The controller (and its listeners)
+  /// stay the same, so every picked file and folder remains queued. All item progress is reset to
+  /// `queued`: a file already sent to the previous PC now has to be sent to the new one too.
+  ///
+  /// Switching while a transfer is running is refused — the in-flight ticket belongs to the old
+  /// client and would be stranded if that client were closed.
+  void retarget({required UploadApi api, required String folderId}) {
+    if (_running) {
+      throw StateError('Cannot switch PCs while a transfer is running.');
+    }
+    _api = api;
+    _folderId = folderId;
+    for (final item in items) {
+      item
+        ..state = TransferState.queued
+        ..hashed = 0
+        ..uploaded = 0
+        ..total = 0
+        ..deduped = false
+        ..remotePath = null
+        ..error = null;
+    }
     notifyListeners();
   }
 

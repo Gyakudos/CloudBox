@@ -38,6 +38,7 @@ class FakeUploadApi implements UploadApi {
   final Map<String, List<int>> _uploads = {};
   final List<({int offset, int length})> appends = [];
   final List<String> commitPaths = [];
+  final List<String> createFolders = [];
   int createCalls = 0;
 
   @override
@@ -47,6 +48,7 @@ class FakeUploadApi implements UploadApi {
     String folderId = 'default',
   }) async {
     createCalls++;
+    createFolders.add(folderId);
     final id = 'upload-$createCalls';
     if (completeOnCreate) {
       return UploadTicket(uploadId: id, offset: size, complete: true);
@@ -234,6 +236,75 @@ void main() {
       // A second run must not re-upload the finished files.
       await controller.run();
       expect(api.createCalls, 2);
+    });
+
+    test('retarget keeps the queue and sends it to the new PC and folder', () async {
+      final first = FakeUploadApi();
+      final second = FakeUploadApi();
+      final controller = TransferController(api: first, chunkSize: 512);
+      controller.addFiles([
+        _source('a.bin', _pattern(100)),
+        _source('b.bin', _pattern(200)),
+      ]);
+
+      await controller.run();
+      expect(controller.items.every((i) => i.state == TransferState.done), isTrue);
+      expect(first.createFolders, ['default', 'default']);
+
+      controller.retarget(api: second, folderId: 'backup-other');
+      expect(controller.items, hasLength(2));
+      expect(controller.items.every((i) => i.state == TransferState.queued), isTrue);
+      expect(controller.api, same(second));
+      expect(controller.folderId, 'backup-other');
+
+      // Adding after the switch joins the very same queue.
+      controller.addFiles([_source('c.bin', _pattern(50))]);
+      await controller.run();
+
+      expect(first.createCalls, 2);
+      expect(second.createCalls, 3);
+      expect(second.createFolders, ['backup-other', 'backup-other', 'backup-other']);
+      expect(second.commitPaths, ['a.bin', 'b.bin', 'c.bin']);
+      expect(controller.items.every((i) => i.state == TransferState.done), isTrue);
+    });
+
+    test('retarget resets failed items so they are retried on the new PC', () async {
+      final first = FakeUploadApi(failAppend: true);
+      final second = FakeUploadApi();
+      final controller = TransferController(api: first, chunkSize: 128);
+      controller.addFiles([_source('bad.bin', _pattern(200))]);
+
+      await controller.run();
+      expect(controller.items.single.state, TransferState.failed);
+
+      controller.retarget(api: second, folderId: 'backup-other');
+      expect(controller.items.single.state, TransferState.queued);
+      expect(controller.items.single.error, isNull);
+
+      await controller.run();
+      expect(controller.items.single.state, TransferState.done);
+      expect(second.commitPaths, ['bad.bin']);
+    });
+
+    test('retarget refuses while a transfer is running', () async {
+      late TransferController controller;
+      StateError? refused;
+      final api = FakeUploadApi(onCommit: () {
+        // onCommit runs mid-transfer, while the old upload ticket is still in flight.
+        try {
+          controller.retarget(api: FakeUploadApi(), folderId: 'other');
+        } on StateError catch (error) {
+          refused = error;
+        }
+      });
+      controller = TransferController(api: api, chunkSize: 128);
+      controller.addFiles([_source('one.bin', _pattern(100))]);
+
+      await controller.run();
+
+      expect(refused, isNotNull);
+      expect(controller.folderId, 'default');
+      expect(controller.items.single.state, TransferState.done);
     });
 
     test('ignores duplicate picks of the same name and size', () {

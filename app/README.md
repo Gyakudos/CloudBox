@@ -4,8 +4,10 @@ The Flutter client. The home screen lists PCs already paired with this phone —
 and send without scanning the QR code again. Pairing itself is over pinned TLS, and files are sent
 over a resumable, hash-verified transfer. The destination drive and folder are configured on the PC
 in the CloudBox app's Storage screen; the phone uses the folder the agent reports at pairing and
-never asks you to pick a drive. Hashing runs on a background isolate so a large photo or folder does
-not lock up the UI. The **Upload a whole folder** checkbox swaps the file picker for the
+never asks you to pick a drive. **Paired Devices** on the Send screen switches the destination to
+another paired PC while keeping everything already queued, so you can add more files afterwards and
+send them all together. Hashing runs on a background isolate so a large photo or folder does not lock
+up the UI. The **Upload a whole folder** checkbox swaps the file picker for the
 Android folder picker: it walks the whole tree through the Storage Access Framework, stages the
 files in the app cache, and uploads each one with its relative path (`DCIM/Camera/photo.jpg`) so
 the agent recreates the subfolders on the PC.
